@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UFC Fight Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {--bg:#0d0d0d;--surface:#1a1a1a;--surface2:#222;--border:#333;--text:#f0f0f0;--muted:#888;--accent:#c8102e;--gold:#c9a840;--blue:#3a7bd5;--green:#2ecc71;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5;}
+  header{background:linear-gradient(90deg,#1a0006,#0d0d0d);border-bottom:2px solid var(--accent);padding:18px 32px;display:flex;align-items:center;gap:16px;}
+  header h1{font-size:22px;font-weight:700;letter-spacing:1px;}
+  header span{font-size:12px;color:var(--muted);border:1px solid var(--border);padding:3px 10px;border-radius:12px;}
+  nav{display:flex;background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;}
+  nav button{background:none;border:none;color:var(--muted);padding:14px 20px;cursor:pointer;font-size:13px;font-weight:500;border-bottom:2px solid transparent;transition:all 0.2s;}
+  nav button:hover{color:var(--text);}
+  nav button.active{color:var(--accent);border-bottom-color:var(--accent);}
+  main{padding:24px 32px;max-width:1200px;margin:0 auto;}
+  .tab{display:none;}.tab.active{display:block;}
+  h2{font-size:17px;font-weight:600;margin-bottom:16px;}
+  h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;}
+  .stat-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 18px;text-align:center;}
+  .stat-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+  .stat-card .value{font-size:26px;font-weight:700;}
+  .stat-card .sub{font-size:11px;color:var(--muted);margin-top:3px;}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
+  .badge.striker{background:#3d1515;color:#f08080;}.badge.grappler{background:#153d1e;color:#80c080;}
+  .badge.complete{background:#1e1a35;color:#a090e0;}.badge.balanced{background:#2a2510;color:#d0bc70;}
+  .badge.ko{background:#3d1515;color:#f08080;}.badge.sub{background:#153d1e;color:#80c080;}.badge.dec{background:#151a2d;color:#809ad0;}
+  select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:500;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:0.4px;}
+  td{padding:10px 12px;border-bottom:1px solid #1e1e1e;}
+  tr:hover td{background:#1e1e1e;}
+  .bar-wrap{display:flex;align-items:center;gap:8px;}
+  .bar{height:6px;border-radius:3px;background:var(--accent);}
+  .prob-bar{height:24px;border-radius:4px;display:flex;align-items:center;overflow:hidden;font-size:11px;font-weight:700;}
+  .prob-a{background:var(--accent);display:flex;align-items:center;justify-content:center;height:100%;}
+  .prob-b{background:var(--blue);flex:1;display:flex;align-items:center;justify-content:center;height:100%;}
+  .round-row{display:flex;gap:6px;margin-bottom:6px;align-items:center;}
+  .round-label{font-size:11px;color:var(--muted);width:50px;}
+  .controls{display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+  .controls label{font-size:12px;color:var(--muted);}
+  .tip{font-size:11px;color:var(--muted);margin-top:8px;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><polygon points="14,2 24,8 24,20 14,26 4,20 4,8" fill="#c8102e" opacity="0.8"/><text x="14" y="18" text-anchor="middle" fill="white" font-size="10" font-weight="bold">UFC</text></svg>
+  <h1>UFC Fight Analytics</h1>
+  <span>Live PostgreSQL Data</span>
+</header>
+<nav>
+  <button class="active" onclick="showTab('overview',this)">Overview</button>
+  <button onclick="showTab('fighters',this)">Fighter Stats</button>
+  <button onclick="showTab('momentum',this)">Round Momentum</button>
+  <button onclick="showTab('probability',this)">Win Probability</button>
+  <button onclick="showTab('predictor',this)">Finish Predictor</button>
+  <button onclick="showTab('matchup',this)">Matchup</button>
+</nav>
+<main>
+<div id="overview" class="tab active">
+  <div class="grid4">
+    <div class="stat-card"><div class="label">Fighters</div><div class="value">1309</div><div class="sub">in database</div></div>
+    <div class="stat-card"><div class="label">Fights</div><div class="value">4664</div><div class="sub">analyzed</div></div>
+    <div class="stat-card"><div class="label">Rounds</div><div class="value">22788</div><div class="sub">tracked</div></div>
+    <div class="stat-card"><div class="label">Finish Rate</div><div class="value">48%</div><div class="sub">KO or Sub</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Striking Volume by Fighter</h3><div style="position:relative;height:220px"><canvas id="chartStrikes"></canvas></div></div>
+    <div class="card"><h3>Fighter Style Distribution</h3><div style="position:relative;height:220px"><canvas id="chartStyle"></canvas></div></div>
+    <div class="card"><h3>Takedowns vs Control Time</h3><div style="position:relative;height:220px"><canvas id="chartTD"></canvas></div></div>
+    <div class="card"><h3>Fight Results</h3><div style="position:relative;height:220px"><canvas id="chartMethods"></canvas></div></div>
+  </div>
+</div>
+<div id="fighters" class="tab">
+  <h2>Fighter Career Averages (per round)</h2>
+  <div class="card">
+    <table><thead><tr>
+      <th>Fighter</th><th>Class</th><th>Style</th>
+      <th>Sig Str/Rd</th><th>Str Acc %</th><th>TDs/Rd</th><th>TD Acc %</th>
+      <th>Ctrl Sec/Rd</th><th>KDs/Rd</th><th>Sub Att/Rd</th>
+    </tr></thead><tbody id="fighterRows"></tbody></table>
+  </div>
+  <p class="tip">Top 20 fighters by significant strikes per round. Live from v_fighter_averages.</p>
+</div>
+<div id="momentum" class="tab">
+  <h2>Round-by-Round Momentum</h2>
+  <div class="controls"><label>Select fight:</label><select id="fightSelect" onchange="renderMomentum()"></select></div>
+  <div class="grid2">
+    <div class="card" id="momentumViz"></div>
+    <div class="card"><h3>Cumulative Strike Differential</h3><div style="position:relative;height:260px"><canvas id="chartMomentum"></canvas></div></div>
+  </div>
+</div>
+<div id="probability" class="tab">
+  <h2>Win Probability Matchups</h2>
+  <p class="tip" style="margin-bottom:16px">SQL model: Striking 40% · Grappling 30% · Control 20% · Accuracy 10%</p>
+  <div id="probCards"></div>
+</div>
+<div id="predictor" class="tab">
+  <h2>Finish Predictor</h2>
+  <p class="tip" style="margin-bottom:16px">Blended score from knockdowns, submission attempts, and striking volume.</p>
+  <div class="card">
+    <table><thead><tr><th>Fighter A</th><th>Fighter B</th><th>Finish Score</th><th>Predicted Method</th><th>Visual</th></tr></thead>
+    <tbody id="finishRows"></tbody></table>
+  </div>
+</div>
+<div id="matchup" class="tab">
+  <h2>Custom Matchup Predictor</h2>
+  <p class="tip" style="margin-bottom:16px">Filter by weight class then select two fighters to compare.</p>
+  <div class="controls" style="margin-bottom:16px">
+    <label>Weight Class:</label>
+    <select id="weightSelect" onchange="filterByWeight()"></select>
+  </div>
+  <div class="controls">
+    <label>Fighter 1:</label>
+    <select id="f1Select" onchange="renderMatchup()"></select>
+    <label style="margin-left:12px">vs</label>
+    <select id="f2Select" onchange="renderMatchup()"></select>
+  </div>
+  <div id="matchupResult"></div>
+</div>
+</main>
+<script>
+const DATA = {"fighter_averages": [{"fighter_id": 91, "name": "Tommy McMillen", "weight_class": "Featherweight", "total_fights": 7, "avg_sig_strikes_per_rd": 74.0, "sig_strike_accuracy_pct": 55.2, "avg_td_per_rd": 0.0, "td_accuracy_pct": null, "avg_ctrl_sec_per_rd": 6.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 1.0}, {"fighter_id": 335, "name": "Ty Miller", "weight_class": "Welterweight", "total_fights": 3, "avg_sig_strikes_per_rd": 59.0, "sig_strike_accuracy_pct": 48.8, "avg_td_per_rd": 0.0, "td_accuracy_pct": null, "avg_ctrl_sec_per_rd": 3.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 1.0}, {"fighter_id": 64, "name": "Josh Hokit", "weight_class": "Heavyweight", "total_fights": 13, "avg_sig_strikes_per_rd": 51.0, "sig_strike_accuracy_pct": 59.4, "avg_td_per_rd": 0.11, "td_accuracy_pct": 15.0, "avg_ctrl_sec_per_rd": 34.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.22}, {"fighter_id": 230, "name": "Javier Reyes", "weight_class": "Featherweight", "total_fights": 4, "avg_sig_strikes_per_rd": 46.0, "sig_strike_accuracy_pct": 61.3, "avg_td_per_rd": 1.0, "td_accuracy_pct": 50.0, "avg_ctrl_sec_per_rd": 117.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 1.0}, {"fighter_id": 166, "name": "Marwan Rahiki", "weight_class": "Featherweight", "total_fights": 4, "avg_sig_strikes_per_rd": 45.0, "sig_strike_accuracy_pct": 54.9, "avg_td_per_rd": 0.0, "td_accuracy_pct": null, "avg_ctrl_sec_per_rd": 48.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 175, "name": "Steven Asplund", "weight_class": "Heavyweight", "total_fights": 7, "avg_sig_strikes_per_rd": 41.9, "sig_strike_accuracy_pct": 44.9, "avg_td_per_rd": 0.0, "td_accuracy_pct": null, "avg_ctrl_sec_per_rd": 3.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.22}, {"fighter_id": 443, "name": "Alice Ardelean", "weight_class": "Women's Strawweight", "total_fights": 7, "avg_sig_strikes_per_rd": 41.5, "sig_strike_accuracy_pct": 47.0, "avg_td_per_rd": 0.33, "td_accuracy_pct": 43.3, "avg_ctrl_sec_per_rd": 28.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 824, "name": "Joanne Wood", "weight_class": "Flyweight", "total_fights": 9, "avg_sig_strikes_per_rd": 39.9, "sig_strike_accuracy_pct": 52.4, "avg_td_per_rd": 0.48, "td_accuracy_pct": 63.9, "avg_ctrl_sec_per_rd": 26.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 681, "name": "Ozzy Diaz", "weight_class": "Middleweight", "total_fights": 3, "avg_sig_strikes_per_rd": 39.9, "sig_strike_accuracy_pct": 55.9, "avg_td_per_rd": 0.0, "td_accuracy_pct": null, "avg_ctrl_sec_per_rd": 0.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 221, "name": "Santiago Luna", "weight_class": "Bantamweight", "total_fights": 6, "avg_sig_strikes_per_rd": 39.6, "sig_strike_accuracy_pct": 53.7, "avg_td_per_rd": 1.43, "td_accuracy_pct": 85.7, "avg_ctrl_sec_per_rd": 65.0, "avg_sub_attempts_per_rd": 0.29, "avg_knockdowns_per_rd": 0.29}, {"fighter_id": 289, "name": "Klaudia Sygula", "weight_class": "Bantamweight", "total_fights": 6, "avg_sig_strikes_per_rd": 39.2, "sig_strike_accuracy_pct": 47.5, "avg_td_per_rd": 0.12, "td_accuracy_pct": 14.3, "avg_ctrl_sec_per_rd": 20.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 355, "name": "Joshua Van", "weight_class": "Flyweight", "total_fights": 15, "avg_sig_strikes_per_rd": 39.2, "sig_strike_accuracy_pct": 56.1, "avg_td_per_rd": 0.18, "td_accuracy_pct": 75.0, "avg_ctrl_sec_per_rd": 18.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.24}, {"fighter_id": 250, "name": "Carlos Leal", "weight_class": "Welterweight", "total_fights": 9, "avg_sig_strikes_per_rd": 38.7, "sig_strike_accuracy_pct": 43.0, "avg_td_per_rd": 0.05, "td_accuracy_pct": 3.3, "avg_ctrl_sec_per_rd": 30.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 477, "name": "Djorden Santos", "weight_class": "Middleweight", "total_fights": 4, "avg_sig_strikes_per_rd": 38.3, "sig_strike_accuracy_pct": 42.7, "avg_td_per_rd": 0.17, "td_accuracy_pct": 33.3, "avg_ctrl_sec_per_rd": 24.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 77, "name": "Chris Padilla", "weight_class": "Lightweight", "total_fights": 14, "avg_sig_strikes_per_rd": 38.3, "sig_strike_accuracy_pct": 53.1, "avg_td_per_rd": 0.28, "td_accuracy_pct": 15.5, "avg_ctrl_sec_per_rd": 56.0, "avg_sub_attempts_per_rd": 0.03, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 44, "name": "Gauge Young", "weight_class": "Lightweight", "total_fights": 13, "avg_sig_strikes_per_rd": 38.1, "sig_strike_accuracy_pct": 50.1, "avg_td_per_rd": 0.15, "td_accuracy_pct": 45.8, "avg_ctrl_sec_per_rd": 27.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.23}, {"fighter_id": 1000, "name": "Shane Burgos", "weight_class": "Featherweight", "total_fights": 6, "avg_sig_strikes_per_rd": 37.9, "sig_strike_accuracy_pct": 53.5, "avg_td_per_rd": 0.11, "td_accuracy_pct": 44.4, "avg_ctrl_sec_per_rd": 41.0, "avg_sub_attempts_per_rd": 0.17, "avg_knockdowns_per_rd": 0.06}, {"fighter_id": 804, "name": "Emily Ducote", "weight_class": "Women's Strawweight", "total_fights": 5, "avg_sig_strikes_per_rd": 37.3, "sig_strike_accuracy_pct": 51.7, "avg_td_per_rd": 0.07, "td_accuracy_pct": 16.7, "avg_ctrl_sec_per_rd": 4.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.0}, {"fighter_id": 1023, "name": "Jeff Molina", "weight_class": "Flyweight", "total_fights": 3, "avg_sig_strikes_per_rd": 36.5, "sig_strike_accuracy_pct": 52.6, "avg_td_per_rd": 0.0, "td_accuracy_pct": 0.0, "avg_ctrl_sec_per_rd": 33.0, "avg_sub_attempts_per_rd": 0.0, "avg_knockdowns_per_rd": 0.38}], "fighter_style": [{"name": "Tommy McMillen", "weight_class": "Featherweight", "avg_sig_strikes_per_rd": 74.0, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 6.0, "style": "Striker"}, {"name": "Ty Miller", "weight_class": "Welterweight", "avg_sig_strikes_per_rd": 59.0, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 3.0, "style": "Striker"}, {"name": "Josh Hokit", "weight_class": "Heavyweight", "avg_sig_strikes_per_rd": 51.0, "avg_td_per_rd": 0.11, "avg_ctrl_sec_per_rd": 34.0, "style": "Striker"}, {"name": "Javier Reyes", "weight_class": "Featherweight", "avg_sig_strikes_per_rd": 46.0, "avg_td_per_rd": 1.0, "avg_ctrl_sec_per_rd": 117.0, "style": "Balanced"}, {"name": "Marwan Rahiki", "weight_class": "Featherweight", "avg_sig_strikes_per_rd": 45.0, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 48.0, "style": "Striker"}, {"name": "Steven Asplund", "weight_class": "Heavyweight", "avg_sig_strikes_per_rd": 41.9, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 3.0, "style": "Striker"}, {"name": "Alice Ardelean", "weight_class": "Women's Strawweight", "avg_sig_strikes_per_rd": 41.5, "avg_td_per_rd": 0.33, "avg_ctrl_sec_per_rd": 28.0, "style": "Striker"}, {"name": "Joanne Wood", "weight_class": "Flyweight", "avg_sig_strikes_per_rd": 39.9, "avg_td_per_rd": 0.48, "avg_ctrl_sec_per_rd": 26.0, "style": "Striker"}, {"name": "Ozzy Diaz", "weight_class": "Middleweight", "avg_sig_strikes_per_rd": 39.9, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 0, "style": "Striker"}, {"name": "Santiago Luna", "weight_class": "Bantamweight", "avg_sig_strikes_per_rd": 39.6, "avg_td_per_rd": 1.43, "avg_ctrl_sec_per_rd": 65.0, "style": "Complete"}, {"name": "Klaudia Sygula", "weight_class": "Bantamweight", "avg_sig_strikes_per_rd": 39.2, "avg_td_per_rd": 0.12, "avg_ctrl_sec_per_rd": 20.0, "style": "Striker"}, {"name": "Joshua Van", "weight_class": "Flyweight", "avg_sig_strikes_per_rd": 39.2, "avg_td_per_rd": 0.18, "avg_ctrl_sec_per_rd": 18.0, "style": "Striker"}, {"name": "Carlos Leal", "weight_class": "Welterweight", "avg_sig_strikes_per_rd": 38.7, "avg_td_per_rd": 0.05, "avg_ctrl_sec_per_rd": 30.0, "style": "Striker"}, {"name": "Djorden Santos", "weight_class": "Middleweight", "avg_sig_strikes_per_rd": 38.3, "avg_td_per_rd": 0.17, "avg_ctrl_sec_per_rd": 24.0, "style": "Striker"}, {"name": "Chris Padilla", "weight_class": "Lightweight", "avg_sig_strikes_per_rd": 38.3, "avg_td_per_rd": 0.28, "avg_ctrl_sec_per_rd": 56.0, "style": "Striker"}, {"name": "Gauge Young", "weight_class": "Lightweight", "avg_sig_strikes_per_rd": 38.1, "avg_td_per_rd": 0.15, "avg_ctrl_sec_per_rd": 27.0, "style": "Striker"}, {"name": "Shane Burgos", "weight_class": "Featherweight", "avg_sig_strikes_per_rd": 37.9, "avg_td_per_rd": 0.11, "avg_ctrl_sec_per_rd": 41.0, "style": "Striker"}, {"name": "Emily Ducote", "weight_class": "Women's Strawweight", "avg_sig_strikes_per_rd": 37.3, "avg_td_per_rd": 0.07, "avg_ctrl_sec_per_rd": 4.0, "style": "Striker"}, {"name": "Jeff Molina", "weight_class": "Flyweight", "avg_sig_strikes_per_rd": 36.5, "avg_td_per_rd": 0, "avg_ctrl_sec_per_rd": 33.0, "style": "Striker"}], "fight_comparison": [{"fight_id": 33, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Jasmine Jasudavicius", "fighter2": "Karine Silva", "winner": "Jasmine Jasudavicius", "win_method": "Decision - Unanimous", "win_round": 3, "f1_total_sig": 18, "f1_total_td": 3, "f1_total_ctrl": 489, "f2_total_sig": 15, "f2_total_td": 0, "f2_total_ctrl": 0}, {"fight_id": 174, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "winner": null, "win_method": "Decision - Majority", "win_round": 3, "f1_total_sig": 135, "f1_total_td": 0, "f1_total_ctrl": 75, "f2_total_sig": 91, "f2_total_td": 1, "f2_total_ctrl": 31}, {"fight_id": 40, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "winner": null, "win_method": "Decision - Majority", "win_round": 3, "f1_total_sig": 135, "f1_total_td": 0, "f1_total_ctrl": 75, "f2_total_sig": 91, "f2_total_td": 1, "f2_total_ctrl": 31}, {"fight_id": 55, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Kyler Phillips", "fighter2": "Charles Jourdain", "winner": "Charles Jourdain", "win_method": "Decision - Unanimous", "win_round": 3, "f1_total_sig": 36, "f1_total_td": 7, "f1_total_ctrl": 433, "f2_total_sig": 58, "f2_total_td": 1, "f2_total_ctrl": 21}, {"fight_id": 50, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Melissa Croden", "fighter2": "Daria Zhelezniakova", "winner": "Melissa Croden", "win_method": "Decision - Unanimous", "win_round": 3, "f1_total_sig": 69, "f1_total_td": 4, "f1_total_ctrl": 312, "f2_total_sig": 41, "f2_total_td": 0, "f2_total_ctrl": 0}, {"fight_id": 49, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Tanner Boser", "fighter2": "Gokhan Saricam", "winner": "Gokhan Saricam", "win_method": "KO/TKO", "win_round": 2, "f1_total_sig": 60, "f1_total_td": 0, "f1_total_ctrl": 90, "f2_total_sig": 57, "f2_total_td": 0, "f2_total_ctrl": 80}, {"fight_id": 510, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Jasmine Jasudavicius", "fighter2": "Karine Silva", "winner": "Jasmine Jasudavicius", "win_method": "Decision - Unanimous", "win_round": 3, "f1_total_sig": 18, "f1_total_td": 3, "f1_total_ctrl": 489, "f2_total_sig": 15, "f2_total_td": 0, "f2_total_ctrl": 0}, {"fight_id": 134, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Melissa Croden", "fighter2": "Daria Zhelezniakova", "winner": "Melissa Croden", "win_method": "Decision - Unanimous", "win_round": 3, "f1_total_sig": 69, "f1_total_td": 4, "f1_total_ctrl": 312, "f2_total_sig": 41, "f2_total_td": 0, "f2_total_ctrl": 0}, {"fight_id": 56, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Mandel Nallo", "fighter2": "Jai Herbert", "winner": "Jai Herbert", "win_method": "KO/TKO", "win_round": 1, "f1_total_sig": 16, "f1_total_td": 0, "f1_total_ctrl": 10, "f2_total_sig": 19, "f2_total_td": 0, "f2_total_ctrl": 27}, {"fight_id": 53, "event_name": "UFC Fight Night: Burns vs. Malott", "event_date": "2026-04-18", "fighter1": "Jamie Siraj", "fighter2": "John Yannis", "winner": "John Yannis", "win_method": "KO/TKO", "win_round": 1, "f1_total_sig": 6, "f1_total_td": 0, "f1_total_ctrl": 0, "f2_total_sig": 21, "f2_total_td": 0, "f2_total_ctrl": 9}], "round_momentum": [{"fight_id": 33, "round_number": 1, "fighter1": "Jasmine Jasudavicius", "fighter2": "Karine Silva", "f1_sig": 1, "f2_sig": 7, "f1_ctrl": 109, "f2_ctrl": 0, "f1_td": 1, "f2_td": 0, "f1_score": 10, "f2_score": 14, "round_winner": "Karine Silva"}, {"fight_id": 33, "round_number": 2, "fighter1": "Jasmine Jasudavicius", "fighter2": "Karine Silva", "f1_sig": 9, "f2_sig": 4, "f1_ctrl": 140, "f2_ctrl": 0, "f1_td": 1, "f2_td": 0, "f1_score": 27, "f2_score": 8, "round_winner": "Jasmine Jasudavicius"}, {"fight_id": 33, "round_number": 3, "fighter1": "Jasmine Jasudavicius", "fighter2": "Karine Silva", "f1_sig": 8, "f2_sig": 4, "f1_ctrl": 240, "f2_ctrl": 0, "f1_td": 1, "f2_td": 0, "f1_score": 29, "f2_score": 8, "round_winner": "Jasmine Jasudavicius"}, {"fight_id": 40, "round_number": 1, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 25, "f2_sig": 24, "f1_ctrl": 32, "f2_ctrl": 5, "f1_td": 0, "f2_td": 0, "f1_score": 51, "f2_score": 48, "round_winner": "John Castaneda"}, {"fight_id": 40, "round_number": 2, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 45, "f2_sig": 38, "f1_ctrl": 11, "f2_ctrl": 25, "f1_td": 0, "f2_td": 0, "f1_score": 90, "f2_score": 76, "round_winner": "John Castaneda"}, {"fight_id": 40, "round_number": 3, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 65, "f2_sig": 29, "f1_ctrl": 32, "f2_ctrl": 1, "f1_td": 0, "f2_td": 1, "f1_score": 131, "f2_score": 63, "round_winner": "John Castaneda"}, {"fight_id": 174, "round_number": 1, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 25, "f2_sig": 24, "f1_ctrl": 32, "f2_ctrl": 5, "f1_td": 0, "f2_td": 0, "f1_score": 51, "f2_score": 48, "round_winner": "John Castaneda"}, {"fight_id": 174, "round_number": 2, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 45, "f2_sig": 38, "f1_ctrl": 11, "f2_ctrl": 25, "f1_td": 0, "f2_td": 0, "f1_score": 90, "f2_score": 76, "round_winner": "John Castaneda"}, {"fight_id": 174, "round_number": 3, "fighter1": "John Castaneda", "fighter2": "Mark Vologdin", "f1_sig": 65, "f2_sig": 29, "f1_ctrl": 32, "f2_ctrl": 1, "f1_td": 0, "f2_td": 1, "f1_score": 131, "f2_score": 63, "round_winner": "John Castaneda"}], "win_probability": [{"fighter_a": "Ethyn Ewing", "fighter_b": "Brian Kelleher", "weight_class": "Bantamweight", "a_striking_edge_pct": 77.7, "a_grappling_edge_pct": 35.3, "a_control_edge_pct": 15.7, "a_win_probability_pct": 50.5}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Davey Grant", "weight_class": "Bantamweight", "a_striking_edge_pct": 58.2, "a_grappling_edge_pct": 50.8, "a_control_edge_pct": 37.1, "a_win_probability_pct": 51.5}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Alatengheili", "weight_class": "Bantamweight", "a_striking_edge_pct": 71.1, "a_grappling_edge_pct": 37.5, "a_control_edge_pct": 26.0, "a_win_probability_pct": 51.0}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Randy Costa", "weight_class": "Bantamweight", "a_striking_edge_pct": 64.5, "a_grappling_edge_pct": 100.0, "a_control_edge_pct": 37.1, "a_win_probability_pct": 68.6}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Pingyuan Liu", "weight_class": "Bantamweight", "a_striking_edge_pct": 80.1, "a_grappling_edge_pct": 100.0, "a_control_edge_pct": 81.3, "a_win_probability_pct": 84.4}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Javid Basharat", "weight_class": "Bantamweight", "a_striking_edge_pct": 60.3, "a_grappling_edge_pct": 33.3, "a_control_edge_pct": 17.3, "a_win_probability_pct": 42.4}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Da'Mon Blackshear", "weight_class": "Bantamweight", "a_striking_edge_pct": 63.4, "a_grappling_edge_pct": 44.8, "a_control_edge_pct": 17.3, "a_win_probability_pct": 47.6}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Urijah Faber", "weight_class": "Bantamweight", "a_striking_edge_pct": 82.8, "a_grappling_edge_pct": 100.0, "a_control_edge_pct": 68.4, "a_win_probability_pct": 83.2}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Vinicius Salvador", "weight_class": "Bantamweight", "a_striking_edge_pct": 61.8, "a_grappling_edge_pct": 68.2, "a_control_edge_pct": 81.3, "a_win_probability_pct": 67.1}, {"fighter_a": "Ethyn Ewing", "fighter_b": "Jin Soo Son", "weight_class": "Bantamweight", "a_striking_edge_pct": 52.5, "a_grappling_edge_pct": 30.9, "a_control_edge_pct": 28.3, "a_win_probability_pct": 41.2}], "finish_predictor": [{"fighter_a": "Tommy McMillen", "fighter_b": "Lerryan Douglas", "finish_score": 126.5, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Lerryan Douglas", "fighter_b": "Steven Nguyen", "finish_score": 124.9, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Tommy McMillen", "fighter_b": "Steven Nguyen", "finish_score": 122.4, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Lerryan Douglas", "fighter_b": "Javier Reyes", "finish_score": 112.5, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Tommy McMillen", "fighter_b": "Javier Reyes", "finish_score": 110.0, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Javier Reyes", "fighter_b": "Steven Nguyen", "finish_score": 108.4, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Cub Swanson", "fighter_b": "Lerryan Douglas", "finish_score": 97.5, "predicted_method": "KO/TKO likely"}, {"fighter_a": "Ty Miller", "fighter_b": "Dean Barry", "finish_score": 97.5, "predicted_method": "KO/TKO likely"}]};
+function showTab(id,btn){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');}
+function initOverview(){
+  const fa=DATA.fighter_averages;
+  const names=fa.map(f=>f.name.split(' ').pop());
+  const COLORS=['#c8102e','#3a7bd5','#c9a840','#2ecc71','#e67e22','#9b59b6','#1abc9c','#e74c3c','#f39c12','#1abc9c','#8e44ad','#16a085','#d35400','#2980b9','#27ae60','#c0392b','#7f8c8d','#2c3e50','#f1c40f','#e91e63'];
+  new Chart(document.getElementById('chartStrikes'),{type:'bar',data:{labels:names,datasets:[{label:'Sig Strikes/Rd',data:fa.map(f=>f.avg_sig_strikes_per_rd),backgroundColor:COLORS}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#888',font:{size:9}},grid:{color:'#1e1e1e'}},y:{ticks:{color:'#888'},grid:{color:'#1e1e1e'}}}}});
+  const styleCounts={};DATA.fighter_style.forEach(f=>{styleCounts[f.style]=(styleCounts[f.style]||0)+1;});
+  new Chart(document.getElementById('chartStyle'),{type:'doughnut',data:{labels:Object.keys(styleCounts),datasets:[{data:Object.values(styleCounts),backgroundColor:['#c8102e','#3a7bd5','#c9a840','#2ecc71']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#888',font:{size:11},padding:12}}}}});
+  new Chart(document.getElementById('chartTD'),{type:'scatter',data:{datasets:[{label:'Fighters',data:fa.map(f=>{return{x:f.avg_td_per_rd,y:f.avg_ctrl_sec_per_rd,name:f.name}}),backgroundColor:COLORS,pointRadius:7}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw.name}: ${ctx.raw.x} TDs, ${ctx.raw.y}s ctrl`}}},scales:{x:{title:{display:true,text:'Takedowns/Rd',color:'#888'},ticks:{color:'#888'},grid:{color:'#1e1e1e'}},y:{title:{display:true,text:'Control Seconds/Rd',color:'#888'},ticks:{color:'#888'},grid:{color:'#1e1e1e'}}}}});
+  const methods={};DATA.fight_comparison.forEach(f=>{if(f.win_method){const k=f.win_method.includes('KO')?'KO/TKO':f.win_method.includes('Sub')?'Submission':'Decision';methods[k]=(methods[k]||0)+1;}});
+  new Chart(document.getElementById('chartMethods'),{type:'pie',data:{labels:Object.keys(methods),datasets:[{data:Object.values(methods),backgroundColor:['#3a7bd5','#c8102e','#2ecc71','#c9a840']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#888',font:{size:11},padding:12}}}}});
+}
+function initFighters(){
+  const styleMap={};DATA.fighter_style.forEach(f=>{styleMap[f.name]=f.style;});
+  const tbody=document.getElementById('fighterRows');
+  const maxSig=Math.max(...DATA.fighter_averages.map(f=>f.avg_sig_strikes_per_rd));
+  DATA.fighter_averages.forEach(f=>{
+    const style=styleMap[f.name]||'Balanced';
+    const pct=(f.avg_sig_strikes_per_rd/maxSig*100).toFixed(0);
+    tbody.innerHTML+=`<tr><td><strong>${f.name}</strong></td><td style="color:var(--muted)">${f.weight_class}</td><td><span class="badge ${style.toLowerCase()}">${style}</span></td><td><div class="bar-wrap"><div class="bar" style="width:${pct}px"></div>${f.avg_sig_strikes_per_rd}</div></td><td>${f.sig_strike_accuracy_pct??'—'}%</td><td>${f.avg_td_per_rd}</td><td>${f.td_accuracy_pct!=null?f.td_accuracy_pct+'%':'—'}</td><td>${f.avg_ctrl_sec_per_rd}s</td><td>${f.avg_knockdowns_per_rd}</td><td>${f.avg_sub_attempts_per_rd}</td></tr>`;
+  });
+}
+let momentumChart=null;
+function initMomentum(){
+  const fightIds=[...new Set(DATA.round_momentum.map(r=>r.fight_id))];
+  const sel=document.getElementById('fightSelect');
+  const fc=DATA.fight_comparison;
+  fightIds.forEach(id=>{const f=fc.find(x=>x.fight_id===id);const opt=document.createElement('option');opt.value=id;opt.text=f?`${f.fighter1} vs ${f.fighter2} (${f.event_name})`:`Fight ${id}`;sel.appendChild(opt);});
+  renderMomentum();
+}
+function renderMomentum(){
+  const fid=parseInt(document.getElementById('fightSelect').value);
+  const rounds=DATA.round_momentum.filter(r=>r.fight_id===fid);
+  if(!rounds.length)return;
+  const f1=rounds[0].fighter1,f2=rounds[0].fighter2;
+  let html=`<h3>${f1} <span style="color:var(--muted)">vs</span> ${f2}</h3>`;
+  html+=`<div style="display:flex;gap:12px;margin-bottom:12px;font-size:11px"><span style="color:#f08080">■ ${f1}</span><span style="color:#809ad0">■ ${f2}</span></div>`;
+  rounds.forEach(r=>{const total=r.f1_score+r.f2_score||1;const a_pct=(r.f1_score/total*100).toFixed(0);html+=`<div class="round-row"><span class="round-label">Round ${r.round_number}</span><div class="prob-bar" style="flex:1"><div class="prob-a" style="width:${a_pct}%">${r.f1_score}</div><div class="prob-b">${r.f2_score}</div></div><span style="font-size:11px;color:var(--muted);width:80px;text-align:right">${r.round_winner.split(' ').pop()}</span></div>`;});
+  document.getElementById('momentumViz').innerHTML=html;
+  const labels=rounds.map(r=>`Rd ${r.round_number}`);
+  let cumF1=0,cumF2=0;
+  const diffData=rounds.map(r=>{cumF1+=r.f1_sig;cumF2+=r.f2_sig;return cumF1-cumF2;});
+  if(momentumChart)momentumChart.destroy();
+  momentumChart=new Chart(document.getElementById('chartMomentum'),{type:'line',data:{labels,datasets:[{label:'Strike Diff',data:diffData,borderColor:'#c8102e',backgroundColor:'rgba(200,16,46,0.1)',fill:true,tension:0.3,pointRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#888'},grid:{color:'#1e1e1e'}},y:{ticks:{color:'#888'},grid:{color:'#1e1e1e'}}}}});
+}
+function initProbability(){
+  const container=document.getElementById('probCards');
+  DATA.win_probability.filter(p=>p.a_win_probability_pct!==null).forEach(p=>{
+    const prob_a=p.a_win_probability_pct;const prob_b=(100-prob_a).toFixed(1);
+    container.innerHTML+=`<div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div><strong>${p.fighter_a}</strong> <span style="color:var(--muted)">vs</span> <strong>${p.fighter_b}</strong></div><span style="font-size:11px;color:var(--muted);background:var(--surface2);padding:3px 10px;border-radius:10px">${p.weight_class}</span></div><div class="prob-bar" style="margin-bottom:12px;height:32px;border-radius:6px"><div class="prob-a" style="width:${prob_a}%;font-size:13px">${prob_a}%</div><div class="prob-b" style="font-size:13px">${prob_b}%</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"><div class="stat-card"><div class="label">Striking edge</div><div class="value" style="font-size:18px">${p.a_striking_edge_pct}%</div><div class="sub">${p.fighter_a.split(' ').pop()}</div></div><div class="stat-card"><div class="label">Grappling edge</div><div class="value" style="font-size:18px">${p.a_grappling_edge_pct??'—'}%</div><div class="sub">${p.fighter_a.split(' ').pop()}</div></div><div class="stat-card"><div class="label">Control edge</div><div class="value" style="font-size:18px">${p.a_control_edge_pct}%</div><div class="sub">${p.fighter_a.split(' ').pop()}</div></div></div></div>`;
+  });
+}
+function initPredictor(){
+  const max=Math.max(...DATA.finish_predictor.map(f=>f.finish_score));
+  const tbody=document.getElementById('finishRows');
+  DATA.finish_predictor.forEach(f=>{
+    const method=f.predicted_method;
+    const badgeCls=method.includes('KO')?'ko':method.includes('Sub')?'sub':'dec';
+    const barPct=(f.finish_score/max*100).toFixed(0);
+    tbody.innerHTML+=`<tr><td><strong>${f.fighter_a}</strong></td><td><strong>${f.fighter_b}</strong></td><td style="font-weight:700;color:var(--gold)">${f.finish_score}</td><td><span class="badge ${badgeCls}">${f.predicted_method}</span></td><td><div class="bar" style="width:${barPct}px;height:8px;border-radius:4px"></div></td></tr>`;
+  });
+}
+function initMatchup(){
+  const weightSelect=document.getElementById('weightSelect');
+  fetch('fighters.json')
+    .then(r=>r.json())
+    .then(allFighters=>{
+      window._allFighters=allFighters;
+      const weights=[...new Set(allFighters.map(f=>f.weight_class).filter(Boolean))].sort();
+      const allOpt=document.createElement('option');
+      allOpt.value='';allOpt.text='All Weight Classes';
+      weightSelect.appendChild(allOpt);
+      weights.forEach(w=>{
+        const opt=document.createElement('option');
+        opt.value=w;opt.text=w;
+        weightSelect.appendChild(opt);
+      });
+      filterByWeight();
+    });
+}
+
+function filterByWeight(){
+  if(!window._allFighters)return;
+  const wc=document.getElementById('weightSelect').value;
+  const filtered=wc?window._allFighters.filter(f=>f.weight_class===wc):window._allFighters;
+  const f1sel=document.getElementById('f1Select');
+  const f2sel=document.getElementById('f2Select');
+  f1sel.innerHTML='';f2sel.innerHTML='';
+  filtered.forEach((f,i)=>{
+    const o1=document.createElement('option');o1.value=i;o1.text=f.name;f1sel.appendChild(o1);
+    const o2=document.createElement('option');o2.value=i;o2.text=f.name;f2sel.appendChild(o2);
+  });
+  f2sel.selectedIndex=Math.min(1,filtered.length-1);
+  window._filteredFighters=filtered;
+  renderMatchup();
+}
+
+function renderMatchup(){
+  const fighters=window._filteredFighters||DATA.all_fighters;
+  const f1=fighters[document.getElementById('f1Select').value];
+  const f2=fighters[document.getElementById('f2Select').value];
+  if(!f1||!f2||f1.name===f2.name){document.getElementById('matchupResult').innerHTML='<p class="tip">Select two different fighters.</p>';return;}
+  const sig_diff=(f1.avg_sig_strikes_per_rd||0)-(f2.avg_sig_strikes_per_rd||0);
+  const acc_diff=(f1.sig_strike_accuracy_pct||0)-(f2.sig_strike_accuracy_pct||0);
+  const td_diff=(f1.avg_td_per_rd||0)-(f2.avg_td_per_rd||0);
+  const ctrl_diff=(f1.avg_ctrl_sec_per_rd||0)-(f2.avg_ctrl_sec_per_rd||0);
+  const kd_diff=(f1.avg_knockdowns_per_rd||0)-(f2.avg_knockdowns_per_rd||0);
+  const score=sig_diff*0.4+acc_diff*0.1+td_diff*0.3+ctrl_diff*0.01+kd_diff*0.2;
+  const raw=1/(1+Math.exp(-score*0.3));
+  const prob1=Math.min(Math.max(raw*100,5),95).toFixed(1);
+  const prob2=(100-prob1).toFixed(1);
+  const conf=Math.abs(prob1-50);
+  const confLabel=conf>30?'HIGH confidence':conf>15?'MEDIUM confidence':'LOW confidence — too close to call';
+  const confColor=conf>30?'#2ecc71':conf>15?'#c9a840':'#c8102e';
+  const stats=[
+    ['Sig Strikes/Rd',f1.avg_sig_strikes_per_rd,f2.avg_sig_strikes_per_rd],
+    ['Strike Acc %',f1.sig_strike_accuracy_pct,f2.sig_strike_accuracy_pct],
+    ['Takedowns/Rd',f1.avg_td_per_rd,f2.avg_td_per_rd],
+    ['TD Accuracy %',f1.td_accuracy_pct,f2.td_accuracy_pct],
+    ['Ctrl Sec/Rd',f1.avg_ctrl_sec_per_rd,f2.avg_ctrl_sec_per_rd],
+    ['Knockdowns/Rd',f1.avg_knockdowns_per_rd,f2.avg_knockdowns_per_rd],
+    ['Sub Attempts/Rd',f1.avg_sub_attempts_per_rd,f2.avg_sub_attempts_per_rd],
+  ];
+  const rows=stats.map(([label,v1,v2])=>{
+    const val1=v1!=null?parseFloat(v1).toFixed(2):'N/A';
+    const val2=v2!=null?parseFloat(v2).toFixed(2):'N/A';
+    const edge=v1==null||v2==null?'N/A':v1>v2?`<span style="color:#2ecc71">${f1.name.split(' ').pop()} +${(v1-v2).toFixed(2)}</span>`:v2>v1?`<span style="color:#c8102e">${f2.name.split(' ').pop()} +${(v2-v1).toFixed(2)}</span>`:'Even';
+    return `<tr><td>${label}</td><td>${val1}</td><td>${val2}</td><td>${edge}</td></tr>`;
+  }).join('');
+  document.getElementById('matchupResult').innerHTML=`
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0">${f1.name} vs ${f2.name}</h2>
+        <span style="color:${confColor};font-size:12px;font-weight:600">${confLabel}</span>
+      </div>
+      <div class="prob-bar" style="height:40px;border-radius:8px;margin-bottom:8px">
+        <div class="prob-a" style="width:${prob1}%;font-size:15px;font-weight:700">${prob1}%</div>
+        <div class="prob-b" style="font-size:15px;font-weight:700">${prob2}%</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;color:var(--muted)">
+        <span>${f1.name}</span><span>${f2.name}</span>
+      </div>
+      <table>
+        <thead><tr><th>Metric</th><th>${f1.name.split(' ').pop()}</th><th>${f2.name.split(' ').pop()}</th><th>Edge</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+initOverview();initFighters();initMomentum();initProbability();initPredictor();initMatchup();
+</script>
+</body>
+</html>
