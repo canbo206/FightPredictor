@@ -6,6 +6,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
 
+
+# cd /Users/canbo/FightAnalyze && python3 -m http.server 8000
+# http://localhost:8000/dashboard.html
+
 # Database connection
 
 def get_connection():
@@ -221,8 +225,8 @@ if __name__ == "__main__":
     model, scaler    = train_model(features, labels)
 
     # Save model to disk
-    joblib.dump(model,  "/Users/canbo/FightAnalyze/ufc_model.pkl")
-    joblib.dump(scaler, "/Users/canbo/FightAnalyze/ufc_scaler.pkl")
+    joblib.dump(model,  "/Users/canbo/FightAnalyze/models/ufc_model.pkl")
+    joblib.dump(scaler, "/Users/canbo/FightAnalyze/models/ufc_scaler.pkl")
     print("\nModel saved to ufc_model.pkl")
 
     # Test a prediction
