@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Large DB backups (never commit these)
+backup_*.sql
+
+# One-time migration / backfill scripts — kept locally, not uploaded
+backfill.py
+queries/cleanup_and_constraints.sql
+queries/add_metric_columns.sql
