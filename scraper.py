@@ -552,7 +552,6 @@ def insert_fight(conn, event_name, event_date, fight):
 if __name__ == "__main__":
     try:
         conn = get_connection()
-        print("Connected to ufc_analytics successfully!")
 
         events = get_event_urls(limit=300)
 

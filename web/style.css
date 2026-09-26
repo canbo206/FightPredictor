@@ -1,0 +1,893 @@
+/*
+  FightPredictor styles
+
+  This file follows the page from top to bottom.
+  Each block names the part of the page it controls.
+  Selectors beginning with . target HTML classes; # targets an element's ID.
+  Mobile overrides are grouped at the end.
+*/
+
+/*
+  1. Theme colors
+  Change these variables to update colors across the website.
+  For example, var(--bg) uses the background color defined here.
+*/
+:root {
+  color-scheme: dark;
+  --bg: #101113;
+  --panel: #191b1e;
+  --line: #303236;
+  --text: #f0f0ed;
+  --muted: #a2a5aa;
+  --red: #ff7968;
+  --blue: #73bfda;
+  --accent: #dfef91;
+}
+
+/*
+  2. Page defaults and shared controls
+  These rules apply to the whole page. border-box includes padding
+  and borders in an element's width, making layouts easier to size.
+*/
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+button, input {
+  font: inherit;
+}
+
+button, a, input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+/*
+  Keyboard focus
+  Show an outline when someone navigates with the keyboard.
+*/
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
+
+/*
+  Hidden content
+  JavaScript uses the hidden attribute to show or hide results and errors.
+*/
+[hidden] {
+  display: none !important;
+}
+
+/*
+  3. Main page container
+  Center the content and limit its width on large screens.
+*/
+.shell {
+  width: min(1080px, calc(100% - 64px));
+  margin: auto;
+}
+
+/*
+  4. Header and logo
+  The brand is on the left; the Matchup Lab label is on the right.
+*/
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 100px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 850;
+  letter-spacing: -.6px;
+  font-size: 19px;
+}
+
+.brand-light {
+  font-weight: 400;
+  color: #c5c8c9;
+}
+
+.brand-mark {
+  background: var(--accent);
+  color: #171c0c;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 10px 8px;
+  margin-right: 12px;
+  border-radius: 7px;
+  letter-spacing: -1px;
+}
+
+.top-label {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 1.7px;
+  font-weight: 650;
+}
+
+.version {
+  margin-left: 12px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 4px 7px;
+  border-radius: 3px;
+}
+
+/*
+  5. Page title and introduction
+  Includes the small heading label, main title, and supporting text.
+*/
+.heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 44px 0 27px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.heading .eyebrow {
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.2;
+  letter-spacing: -1.4px;
+  font-weight: 650;
+}
+
+.heading-note {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 3px;
+}
+
+/*
+  6. Fighter selection panel
+  The desktop grid has a fighter input on each side and VS in the middle.
+  1fr means one equal share of the available space.
+*/
+.matchup-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 28px 30px 24px;
+}
+
+.matchup-fields {
+  display: grid;
+  grid-template-columns: 1fr 66px 1fr;
+  align-items: center;
+}
+
+.fighter-field {
+  min-width: 0;
+}
+
+.fighter-field label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+/*
+  Fighter colors
+  Each corner sets --corner so its labels and results share a color.
+*/
+.red {
+  --corner: var(--red);
+}
+
+.blue {
+  --corner: var(--blue);
+}
+
+.fighter-field label, .fighter-result .eyebrow {
+  color: var(--corner);
+}
+
+.corner-mark {
+  width: 5px;
+  height: 12px;
+  background: var(--corner);
+  border-radius: 1px;
+}
+
+/*
+  Fighter name inputs
+  ::placeholder styles the hint text; :focus styles the active input.
+*/
+.fighter-field input {
+  width: 100%;
+  background: #111315;
+  color: var(--text);
+  border: 1px solid #383b40;
+  border-radius: 6px;
+  padding: 15px;
+  font-size: 19px;
+  font-weight: 550;
+}
+
+.fighter-field input::placeholder {
+  color: #898d95;
+  font-weight: 400;
+}
+
+.fighter-field input:focus {
+  border-color: var(--corner);
+}
+
+.versus {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 28px;
+}
+
+/*
+  7. Round selection and form actions
+  Place the round controls and Analyze matchup button on the same row.
+*/
+.form-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.rounds {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rounds legend {
+  float: left;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 8px 14px 8px 0;
+}
+
+.rounds label {
+  position: relative;
+  cursor: pointer;
+}
+
+/*
+  Custom radio buttons
+  The real radio input stays clickable but is transparent.
+  The span after it provides the visible button appearance.
+*/
+.rounds input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.rounds span {
+  display: block;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 12px;
+  color: var(--muted);
+}
+
+/*
+  Selected round
+  The + selector targets the span immediately after the checked input.
+*/
+.rounds input:checked + span {
+  background: #373c2b;
+  border-color: #6c754d;
+  color: var(--accent);
+}
+
+.rounds input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/*
+  8. Analyze matchup button
+  :hover applies when the pointer is over the button.
+*/
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  border: 0;
+  border-radius: 6px;
+  padding: 12px 19px;
+  background: var(--accent);
+  color: #202514;
+  font-weight: 700;
+  font-size: 15px;
+  min-height: 47px;
+}
+
+.primary:hover {
+  background: #edff9d;
+}
+
+.primary span {
+  font-size: 23px;
+  line-height: 1;
+}
+
+/*
+  9. Connection status and errors
+  Show the fighter count, retry link, or an actionable error message.
+*/
+.connection-line {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 2px 30px;
+}
+
+#retry {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  font-size: 14px;
+}
+
+.error {
+  color: #ffb2a7;
+  background: #351f20;
+  border: 1px solid #73413c;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/*
+  10. Empty state
+  This message appears before a matchup result is available.
+*/
+.empty-state {
+  border: 1px dashed #373b40;
+  border-radius: 12px;
+  text-align: center;
+  padding: 50px 20px;
+  margin-bottom: 36px;
+}
+
+.empty-symbol {
+  font-size: 28px;
+  color: var(--accent);
+}
+
+.empty-state h2 {
+  font-size: 22px;
+  font-weight: 550;
+  margin: 12px 0;
+}
+
+.empty-state p {
+  color: var(--muted);
+  margin: 0;
+}
+
+/*
+  11. Shared result section headings
+  Used above the matchup, finish-method cards, and statistics table.
+*/
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 25px 0 14px;
+}
+
+.section-heading h2 {
+  font-size: 18px;
+  font-weight: 550;
+  margin: 0;
+  letter-spacing: -.3px;
+}
+
+.subtle {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/*
+  12. Win probability card
+  A subtle background gradient connects the red and blue corners.
+*/
+.prediction-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 28px 30px 17px;
+  background: linear-gradient(115deg, #271e1d 0%, #191b1e 45%, #1a242a 100%);
+}
+
+.probability-grid {
+  display: grid;
+  grid-template-columns: 1fr 60px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.fighter-result h3 {
+  font-weight: 550;
+  letter-spacing: -.7px;
+  font-size: 25px;
+  line-height: 1.2;
+  margin: 10px 0 13px;
+  overflow-wrap: anywhere;
+}
+
+.fighter-result.blue {
+  text-align: right;
+}
+
+/*
+  Probability numbers
+  clamp() lets the font grow with the screen between a minimum and maximum.
+  tabular-nums gives digits equal widths so percentages line up.
+*/
+.big-probability {
+  color: var(--corner);
+  font-size: clamp(36px, 6vw, 65px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -2px;
+  line-height: 1.1;
+  margin: 0 0 7px;
+}
+
+.big-probability .percent {
+  font-size: .48em;
+  margin-left: 3px;
+  font-weight: 400;
+}
+
+.probability-label {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1.4px;
+}
+
+.result-vs {
+  text-align: center;
+  color: #82878c;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/*
+  Win probability bar
+  JavaScript sets each colored segment's width from the model's result.
+*/
+.probability-track {
+  display: flex;
+  gap: 4px;
+  height: 9px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 25px 0 17px;
+}
+
+#red-track {
+  background: var(--red);
+}
+
+#blue-track {
+  background: var(--blue);
+}
+
+/*
+  13. Favored fighter and confidence
+  Styles the summary below the probability bar.
+*/
+.prediction-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+}
+
+#favored {
+  color: #d3d6d8;
+}
+
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.confidence strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.confidence-pill {
+  border: 1px solid #525948;
+  background: #33392c;
+  color: var(--accent);
+  padding: 2px 7px;
+  font-size: 11px;
+  border-radius: 4px;
+  letter-spacing: .7px;
+}
+
+.confidence-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 13px 0 0;
+}
+
+/*
+  14. Finish-method cards
+  Three equal columns show KO/TKO, submission, and decision probabilities.
+  The likely class highlights the most probable finish.
+*/
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.method-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 20px;
+}
+
+.method-card.likely {
+  border-color: #69714c;
+  background: #20241c;
+}
+
+.method-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.method-name {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.likely-label {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.method-value {
+  font-size: 30px;
+  font-weight: 500;
+  margin: 12px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Finish-method bars
+  Each fill sits inside a track; JavaScript sets its percentage width.
+*/
+.method-track {
+  height: 4px;
+  background: #34383c;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.method-fill {
+  background: #727980;
+  height: 100%;
+}
+
+.likely .method-fill {
+  background: var(--accent);
+}
+
+/*
+  15. Fighter statistics table
+  The wrapper allows sideways scrolling when the table cannot fit.
+*/
+.stats-section {
+  margin-top: 30px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+}
+
+th {
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .6px;
+  padding: 16px 20px;
+}
+
+td {
+  font-size: 14px;
+  padding: 13px 20px;
+  border-top: 1px solid #272a2e;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Table alignment and edge colors
+  Keep metric names on the left and numeric comparisons on the right.
+*/
+td:first-child {
+  color: #c6c9cc;
+}
+
+td:not(:first-child), th:not(:first-child) {
+  text-align: right;
+}
+
+tbody tr:hover {
+  background: #1a1d20;
+}
+
+.red-text {
+  color: var(--red);
+}
+
+.blue-text {
+  color: var(--blue);
+}
+
+.even {
+  color: #999fa5;
+}
+
+.table-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 11px 2px 35px;
+}
+
+/*
+  16. Page footer
+  Project text and the prediction reminder at the bottom of the page.
+*/
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid var(--line);
+  padding: 24px 0 30px;
+  margin-top: 44px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.footer-divider {
+  margin: 0 8px;
+  color: #636a72;
+}
+
+/*
+  17. Screen-reader-only text
+  Keep accessibility labels available without displaying them visually.
+*/
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/*
+  18. Mobile layout (screens 720px wide or smaller)
+  These rules override the desktop styles above on narrow screens.
+  Keep mobile changes here so each screen size is easy to find.
+*/
+@media (max-width: 720px) {
+
+  /*
+    Page spacing and header
+  */
+  .shell {
+    width: calc(100% - 32px);
+  }
+
+  .topbar {
+    min-height: 78px;
+  }
+
+  .top-label {
+    display: none;
+  }
+
+  .heading {
+    margin-top: 30px;
+  }
+
+  .heading-note {
+    display: none;
+  }
+
+  /*
+    Stack the fighter fields and form controls
+  */
+  .matchup-panel, .prediction-card {
+    padding: 21px 18px;
+  }
+
+  .matchup-fields {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .versus {
+    display: none;
+  }
+
+  .fighter-field input {
+    font-size: 17px;
+  }
+
+  .form-bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rounds {
+    flex-wrap: wrap;
+  }
+
+  .primary {
+    justify-content: center;
+  }
+
+  /*
+    Fit win probabilities and confidence on a smaller screen
+  */
+  .probability-grid {
+    grid-template-columns: 1fr 24px 1fr;
+    gap: 5px;
+  }
+
+  .fighter-result h3 {
+    font-size: 20px;
+    min-height: 48px;
+  }
+
+  .probability-label {
+    font-size: 10px;
+    letter-spacing: .8px;
+  }
+
+  .prediction-footer {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  /*
+    Use more compact finish-method cards
+  */
+  .method-grid {
+    gap: 8px;
+  }
+
+  .method-card {
+    padding: 14px 10px;
+  }
+
+  .method-top {
+    flex-direction: column;
+    align-items: start;
+    min-height: 43px;
+    gap: 4px;
+  }
+
+  .method-name {
+    font-size: 14px;
+  }
+
+  .method-value {
+    font-size: 26px;
+  }
+
+  .likely-label {
+    font-size: 9px;
+    letter-spacing: .3px;
+  }
+
+  /*
+    Wrap section labels and allow the table to scroll inside its container
+  */
+  .section-heading {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  th, td {
+    padding: 13px 12px;
+  }
+
+  table {
+    min-width: 620px;
+  }
+
+  /*
+    Stack the footer text
+  */
+  footer {
+    align-items: start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+}

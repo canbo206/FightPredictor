@@ -1,8 +1,8 @@
 # FightPredictor
 
-A command-line UFC analytics project that collects fight statistics, stores them
+A UFC analytics project that collects fight statistics, stores them
 in PostgreSQL, and trains machine-learning models to predict fight winners and
-finish methods.
+finish methods through a terminal or a local web interface.
 
 ## Features
 
@@ -11,6 +11,8 @@ finish methods.
 - Trains logistic regression models for the winner and finish method: KO/TKO,
   submission, or decision.
 - Displays matchup probabilities and fighter stat comparisons in an interactive terminal session.
+- Provides a local website with fighter suggestions, probability bars, finish-method
+  predictions, confidence scores, and a side-by-side statistics table.
 
 ## Tech stack
 
@@ -25,6 +27,9 @@ FightPredictor/
 ├── models/                 # Saved models and scalers
 ├── queries/
 │   └── metrics_view.sql    # Fighter metrics and record views for prediction
+├── web/                    # Website HTML, CSS, JavaScript, and favicon
+├── tests/                  # Prediction and local API checks
+├── app.py                  # Local website server
 ├── model.py                # Model training and interactive prediction
 ├── scraper.py              # UFCStats scraper and database inserts
 ├── requirements.txt        # Python dependencies
@@ -81,10 +86,6 @@ between requests. It stops after five consecutive events already in the database
 
 ### Train and predict
 
-Before your first run, update the four `joblib.dump()` destinations near the end
-of `model.py` to point to the `models/` directory in your checkout. These paths
-are currently specific to the original development machine. Ensure the directory exists.
-
 Once the database contains enough fights to train and evaluate both models:
 
 ```sh
@@ -96,7 +97,30 @@ scalers, and displays an example matchup. Enter two fighter names and the schedu
 rounds (3 or 5) to predict another matchup. Type `quit` at either fighter-name prompt
 to exit. Both fighters must have statistics in the database.
 
-Each run retrains the models and overwrites the saved `.pkl` files.
+Each run retrains the models and overwrites the saved `.pkl` files in the project's
+`models/` directory, which is created automatically.
+
+### Open the website
+
+With PostgreSQL running and the Python dependencies installed:
+
+```sh
+python app.py
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser. Choose two
+fighters, select three or five rounds, and click **Analyze matchup**. If available
+in your database, the page initially shows the same Islam Makhachev vs. Dustin
+Poirier example as the terminal.
+
+The website uses the same prediction function as the terminal and loads the four
+saved model/scaler files once. It does not scrape or retrain on page load. If the
+saved models are missing or incompatible, run `python model.py` first. Restart
+the website after retraining to load the updated models.
+
+Use `python app.py --port 8001` if port 8000 is occupied. Press `Ctrl+C` in the
+server terminal to stop the website. This server listens only on your computer;
+it is a local interface, not a production hosting setup.
 
 ## Model methodology
 
@@ -116,8 +140,19 @@ a winner classification report, and finish-method accuracy.
   assess predictions on future events.
 - Missing or incomplete scraped statistics can affect predictions. Existing
   events are skipped, so rerunning the scraper does not repair partially imported events.
-- Database credentials and model output paths currently require manual configuration.
-- Dependencies are unpinned, and there is currently no automated test suite.
+- Database credentials currently require manual configuration.
+- The displayed confidence score measures distance from a 50/50 winner prediction;
+  it is not a calibrated measure of model accuracy.
+- Dependencies are unpinned.
+
+## Tests
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+These checks cover prediction output, invalid matchups, resource cleanup, saved
+model compatibility, and API responses without requiring a running PostgreSQL database.
 
 ## License
 

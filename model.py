@@ -6,6 +6,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
+from pathlib import Path
+
+
+MODEL_DIR = Path(__file__).resolve().parent / "models"
 
 
 # Database connection
@@ -16,7 +20,8 @@ def get_connection():
         database="ufc_analytics",
         user="postgres",
         password="ufc123",
-        port="5432"
+        port="5432",
+        connect_timeout=5,
     )
 
 
@@ -275,7 +280,20 @@ LOWER_IS_BETTER = {
 }
 
 
-def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
+def get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
+    """Return the same prediction data for the terminal and the local website."""
+    if not isinstance(fighter1, str) or not isinstance(fighter2, str):
+        raise ValueError("Enter two fighter names.")
+    fighter1, fighter2 = fighter1.strip(), fighter2.strip()
+    if not fighter1 or not fighter2:
+        raise ValueError("Enter two fighter names.")
+    if len(fighter1) > 120 or len(fighter2) > 120:
+        raise ValueError("Fighter names must be 120 characters or fewer.")
+    if type(rounds) is not int or rounds not in (3, 5):
+        raise ValueError("Scheduled rounds must be 3 or 5.")
+    if fighter1.casefold() == fighter2.casefold():
+        raise ValueError("Choose two different fighters.")
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -295,25 +313,27 @@ def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighte
             FROM v_fighter_metrics m
             LEFT JOIN v_fighter_record r ON r.fighter_id = m.fighter_id
             WHERE m.name ILIKE %s
-            ORDER BY m.total_fights DESC
+            ORDER BY (lower(m.name) = lower(%s)) DESC, m.total_fights DESC, m.name
             LIMIT 1
-        """, (f"%{name}%",))
+        """, ("%" + name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", name))
         return cur.fetchone()
 
-    s1 = get_stats(fighter1)
-    s2 = get_stats(fighter2)
-    cur.close()
-    conn.close()
+    try:
+        s1 = get_stats(fighter1)
+        s2 = get_stats(fighter2)
+    finally:
+        cur.close()
+        conn.close()
 
     if not s1:
-        print(f"  Fighter not found: {fighter1}")
-        return
+        raise ValueError(f"Fighter not found: {fighter1}")
     if not s2:
-        print(f"  Fighter not found: {fighter2}")
-        return
+        raise ValueError(f"Fighter not found: {fighter2}")
 
     # Resolved display names (in case ILIKE matched a fuller name)
     name1, name2 = s1[-1], s2[-1]
+    if name1 == name2:
+        raise ValueError("Both names matched the same fighter. Choose two different fighters.")
 
     # Build the differential feature vector (first len(FEATURES) columns).
     def num(v):
@@ -322,14 +342,16 @@ def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighte
     diffs = [num(s1[i]) - num(s2[i]) for i in range(len(FEATURES))]
 
     # Winner model (directional features)
-    prob = model.predict_proba(scaler.transform([diffs]))[0]
-    prob_a = prob[1]
-    prob_b = prob[0]
+    feature_row = pd.DataFrame([diffs], columns=FEATURE_NAMES)
+    prob = dict(zip(model.classes_, model.predict_proba(scaler.transform(feature_row))[0]))
+    prob_a = float(prob[1])
+    prob_b = float(prob[0])
 
     # Method model (order-invariant edges + bout length)
     method_row = [abs(d) for d in diffs] + [rounds]
-    m_prob = method_model.predict_proba(method_scaler.transform([method_row]))[0]
-    method_probs = dict(zip(method_model.classes_, m_prob))
+    method_frame = pd.DataFrame([method_row], columns=FEATURE_NAMES + ["scheduled_rounds"])
+    m_prob = method_model.predict_proba(method_scaler.transform(method_frame))[0]
+    method_probs = {str(label): float(value) for label, value in zip(method_model.classes_, m_prob)}
     pred_method = max(method_probs, key=method_probs.get)
 
     # Confidence score out of 10 (distance of the win prob from a coin flip)
@@ -340,6 +362,43 @@ def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighte
         conf_label = "MEDIUM"
     else:
         conf_label = "HIGH"
+
+    stats = []
+    for label, base in STAT_LABELS:
+        if base is None:
+            zones = [BASE_COLS.index(f"avg_{zone}_strikes_per_rd") for zone in ("head", "body", "leg")]
+            stats.append({"label": label, "fighter1": "/".join(f"{num(s1[i]):.0f}" for i in zones),
+                          "fighter2": "/".join(f"{num(s2[i]):.0f}" for i in zones),
+                          "edge": None, "difference": None, "lower_is_better": False})
+            continue
+        i = BASE_COLS.index(base)
+        v1 = None if s1[i] is None else float(s1[i])
+        v2 = None if s2[i] is None else float(s2[i])
+        edge, difference = None, None
+        if v1 is not None and v2 is not None:
+            difference = abs(v1 - v2)
+            edge = "even" if v1 == v2 else (
+                "fighter1" if (v1 > v2) ^ (base in LOWER_IS_BETTER) else "fighter2")
+        stats.append({"label": label, "fighter1": v1, "fighter2": v2,
+                      "edge": edge, "difference": difference, "lower_is_better": base in LOWER_IS_BETTER})
+
+    return {"fighter1": name1, "fighter2": name2, "rounds": rounds,
+            "probabilities": {"fighter1": prob_a, "fighter2": prob_b},
+            "method_probabilities": method_probs, "predicted_method": pred_method,
+            "confidence": {"score": conf_score, "label": conf_label}, "stats": stats}
+
+
+def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
+    """Print a shared prediction in the original terminal format."""
+    try:
+        result = get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds)
+    except ValueError as exc:
+        print(f"  {exc}")
+        return
+    name1, name2 = result["fighter1"], result["fighter2"]
+    prob_a, prob_b = result["probabilities"]["fighter1"], result["probabilities"]["fighter2"]
+    method_probs, pred_method = result["method_probabilities"], result["predicted_method"]
+    conf_score, conf_label = result["confidence"]["score"], result["confidence"]["label"]
 
     print(f"\n{'='*54}")
     print(f"  {name1} vs {name2}  ({rounds}-round bout)")
@@ -354,32 +413,21 @@ def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighte
           f"Decision {method_probs.get('Decision',0)*100:4.0f}%")
 
     # Stat breakdown
-    def field(s, base):
-        idx = BASE_COLS.index(base)
-        return s[idx]
-
     print(f"\n  Stat breakdown ({name1} vs {name2}):")
     print(f"  {'Metric':<18} {'F1':>10} {'F2':>10} {'Edge':>14}")
     print(f"  {'-'*54}")
-    for label, base in STAT_LABELS:
-        if base is None:  # Head/Body/Leg composite
-            hbl1 = f"{num(field(s1,'avg_head_strikes_per_rd')):.0f}/{num(field(s1,'avg_body_strikes_per_rd')):.0f}/{num(field(s1,'avg_leg_strikes_per_rd')):.0f}"
-            hbl2 = f"{num(field(s2,'avg_head_strikes_per_rd')):.0f}/{num(field(s2,'avg_body_strikes_per_rd')):.0f}/{num(field(s2,'avg_leg_strikes_per_rd')):.0f}"
-            print(f"  {label:<18} {hbl1:>10} {hbl2:>10} {'':>14}")
-            continue
-        v1, v2 = field(s1, base), field(s2, base)
-        v1s = f"{v1:.2f}" if v1 is not None else "N/A"
-        v2s = f"{v2:.2f}" if v2 is not None else "N/A"
-        if v1 is None or v2 is None:
-            edge = "N/A"
-        elif float(v1) == float(v2):
+    for stat in result["stats"]:
+        def display(value):
+            return "N/A" if value is None else value if isinstance(value, str) else f"{value:.2f}"
+        edge = "N/A"
+        if stat["edge"] == "even":
             edge = "Even"
-        else:
-            # For "lower is better" metrics the smaller value is the advantage.
-            f1_favored = (float(v1) > float(v2)) ^ (base in LOWER_IS_BETTER)
-            winner = name1 if f1_favored else name2
-            edge = f"{winner.split()[0]} +{abs(float(v1)-float(v2)):.2f}"
-        print(f"  {label:<18} {v1s:>10} {v2s:>10} {edge:>14}")
+        elif stat["edge"]:
+            winner = result[stat["edge"]]
+            edge = f"{winner.split()[0]} +{stat['difference']:.2f}"
+        elif isinstance(stat["fighter1"], str):
+            edge = ""
+        print(f"  {stat['label']:<18} {display(stat['fighter1']):>10} {display(stat['fighter2']):>10} {edge:>14}")
 
 
 
@@ -391,10 +439,11 @@ if __name__ == "__main__":
     model, scaler = train_model(features, labels)
     method_model, method_scaler = train_method_model(features, meta)
 
-    joblib.dump(model,         "/Users/canbo/FightAnalyze/models/ufc_model.pkl")
-    joblib.dump(scaler,        "/Users/canbo/FightAnalyze/models/ufc_scaler.pkl")
-    joblib.dump(method_model,  "/Users/canbo/FightAnalyze/models/ufc_method_model.pkl")
-    joblib.dump(method_scaler, "/Users/canbo/FightAnalyze/models/ufc_method_scaler.pkl")
+    MODEL_DIR.mkdir(exist_ok=True)
+    joblib.dump(model,         MODEL_DIR / "ufc_model.pkl")
+    joblib.dump(scaler,        MODEL_DIR / "ufc_scaler.pkl")
+    joblib.dump(method_model,  MODEL_DIR / "ufc_method_model.pkl")
+    joblib.dump(method_scaler, MODEL_DIR / "ufc_method_scaler.pkl")
     print("\nModels saved.")
 
     predict_matchup(model, scaler, method_model, method_scaler,
