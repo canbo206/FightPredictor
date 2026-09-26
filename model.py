@@ -382,9 +382,8 @@ def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighte
         print(f"  {label:<18} {v1s:>10} {v2s:>10} {edge:>14}")
 
 
-# =============================================================
+
 # Main
-# =============================================================
 
 if __name__ == "__main__":
     df = load_fight_data()

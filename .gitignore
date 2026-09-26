@@ -4,6 +4,8 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
+venv/
 
 # Large DB backups (never commit these)
 backup_*.sql

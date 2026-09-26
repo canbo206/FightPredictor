@@ -1,0 +1,8 @@
+beautifulsoup4
+joblib
+numpy
+pandas
+psycopg2-binary
+requests
+scikit-learn
+SQLAlchemy

@@ -1,7 +1,8 @@
 -- =============================================================
 -- UFC Fight Analytics Database
 -- PostgreSQL
--- Run this file first before seed_data.sql
+-- Fresh databases only: run this file, then queries/metrics_view.sql.
+-- Existing databases need migrations; this file does not upgrade them.
 -- =============================================================
 
 -- Tables
@@ -9,10 +10,11 @@
 
 CREATE TABLE fighters (
     fighter_id    SERIAL PRIMARY KEY,
-    name          TEXT NOT NULL,
+    name          TEXT NOT NULL UNIQUE,
     nickname      TEXT,
     weight_class  TEXT NOT NULL,
-    stance        TEXT CHECK(stance IN ('Orthodox','Southpaw','Switch')),
+    stance        TEXT CHECK(stance IN ('Orthodox','Southpaw','Switch','Open Stance','Sideways')),
+    dob           DATE,
     reach_in      NUMERIC(5,2),
     height_in     NUMERIC(5,2),
     wins          INTEGER DEFAULT 0,
@@ -25,7 +27,7 @@ CREATE TABLE fighters (
 
 CREATE TABLE events (
     event_id    SERIAL PRIMARY KEY,
-    event_name  TEXT NOT NULL,
+    event_name  TEXT NOT NULL UNIQUE,
     event_date  DATE NOT NULL,
     location    TEXT,
     card_type   TEXT CHECK(card_type IN ('PPV','Fight Night','UFC 300'))
@@ -43,7 +45,8 @@ CREATE TABLE fights (
     win_method       TEXT CHECK(win_method IN ('KO/TKO','Submission','Decision - Unanimous','Decision - Split','Decision - Majority','No Contest','Draw')),
     win_round        INTEGER,
     win_time         TEXT,
-    is_title_fight   BOOLEAN DEFAULT FALSE
+    is_title_fight   BOOLEAN DEFAULT FALSE,
+    CONSTRAINT fights_event_fighters_key UNIQUE (event_id, fighter1_id, fighter2_id)
 );
 
 CREATE TABLE round_stats (
