@@ -1,72 +1,62 @@
-# FightAnalyze
+# FightPredictor
 
-A Python and PostgreSQL project for collecting UFC fight statistics, exploring
-fighter performance with SQL, and predicting fight winners and finish methods
-from the terminal. There is currently no dashboard or web application.
+A command-line UFC analytics project that collects fight statistics, stores them
+in PostgreSQL, and trains machine-learning models to predict fight winners and
+finish methods.
 
-## What it does
+## Features
 
-- Scrapes event results, round statistics, and fighter profiles from UFCStats.
-- Stores fighters, events, fights, and round statistics in PostgreSQL.
-- Trains logistic regression models for the winner and finish method
-  (KO/TKO, submission, or decision).
-- Offers an interactive matchup predictor with probabilities and stat comparisons.
+- Collects event results, round statistics, and fighter profiles from UFCStats.
+- Builds 23 matchup features covering offense, defense, experience, and physical attributes.
+- Trains logistic regression models for the winner and finish method: KO/TKO,
+  submission, or decision.
+- Displays matchup probabilities and fighter stat comparisons in an interactive terminal session.
 
-Training features use each fighter's statistics from before the fight. Evaluation
-currently uses a random 80/20 train/test split, rather than a chronological holdout.
-Reported accuracy is an experiment result, not a guarantee of future performance.
+## Tech stack
 
-## Project layout
+Python, PostgreSQL, pandas, NumPy, scikit-learn, SQLAlchemy, Requests, and Beautiful Soup.
+
+## Project structure
 
 ```text
-FightAnalyze/
+FightPredictor/
 ├── data/
-│   ├── schema.sql              # Database tables and analysis views
-│   └── seed_data.sql           # Legacy filename: a SELECT query, not seed records
-├── models/                     # Saved models and scalers (.pkl)
+│   └── schema.sql          # Database tables and analysis views
+├── models/                 # Saved models and scalers
 ├── queries/
-│   ├── analysis_queries.sql    # SQL examples for exploring fight statistics
-│   └── metrics_view.sql        # Fighter metrics and record views for prediction
-├── model.py                    # Training and interactive matchup prediction
-├── scraper.py                  # UFCStats scraper and database inserts
-├── requirements.txt            # Python dependencies
+│   └── metrics_view.sql    # Fighter metrics and record views for prediction
+├── model.py                # Model training and interactive prediction
+├── scraper.py              # UFCStats scraper and database inserts
+├── requirements.txt        # Python dependencies
 └── README.md
 ```
 
-The `data/` folder is still needed without a dashboard: `schema.sql` defines the
-database used by both Python scripts. Actual scraped records live in PostgreSQL,
-not in this folder. `seed_data.sql` is optional and only displays fighter averages;
-it does not populate the database. The analysis views also support the SQL examples.
+Scraped records live in PostgreSQL. The `data/` directory contains the SQL needed
+to create the database structure.
 
-Local checkouts may additionally contain ignored maintenance files such as
-`backfill.py`, `queries/add_metric_columns.sql`, and
-`queries/cleanup_and_constraints.sql`. These are not included in a fresh clone.
+## Installation
 
-## Setup
-
-Install Python 3 and PostgreSQL, start the PostgreSQL server, and make sure `psql`
-and `createdb` are on your PATH. Run commands from the repository root.
+Install Python 3 and PostgreSQL. Start the PostgreSQL server and ensure `psql`
+and `createdb` are available on your PATH.
 
 ```sh
+git clone https://github.com/canbo206/FightPredictor.git
+cd FightPredictor
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Dependencies are currently unpinned; there is no locked, reproducible environment yet.
+Run the remaining commands from the repository root with the virtual environment active.
 
-### Database connection
+## Database setup
 
-The current scripts use database `ufc_analytics` on `localhost:5432`, with user
-`postgres` and password `ufc123`. To use your own local credentials, update
-`get_connection()` in both `scraper.py` and `model.py`, plus the SQLAlchemy URL
-inside `load_fight_data()` in `model.py`. Environment variables are not currently
-read by these scripts.
+The scripts currently connect to `ufc_analytics` on `localhost:5432` with user
+`postgres` and password `ufc123`. To use your own credentials, update
+`get_connection()` in both Python scripts and the SQLAlchemy connection URL in
+`model.py` inside `load_fight_data()`.
 
-### Create a fresh database
-
-The following commands assume the connection settings above. PostgreSQL will ask
-for the role's password when authentication requires it.
+Create and initialize a fresh database:
 
 ```sh
 createdb -h localhost -p 5432 -U postgres ufc_analytics
@@ -74,59 +64,61 @@ psql -h localhost -p 5432 -U postgres -d ufc_analytics -v ON_ERROR_STOP=1 -1 -f 
 psql -h localhost -p 5432 -U postgres -d ufc_analytics -v ON_ERROR_STOP=1 -1 -f queries/metrics_view.sql
 ```
 
-Run `schema.sql` once against an empty database. It is not an upgrade script for
-an existing database. Existing installations need the same `fighters.dob` field,
-expanded stance values, and unique constraints on fighter names, event names,
-and `(event_id, fighter1_id, fighter2_id)` that the current schema defines.
-The local maintenance scripts above may help upgrade an older installation;
-review them and back up the database first, as the cleanup script deletes duplicates.
+Run `schema.sql` only against an empty database. Existing installations must
+already have the fields and constraints defined in this schema; it is not a
+migration script. `metrics_view.sql` creates or updates the views used for predictions.
 
-## Collect fight statistics
+## Usage
+
+### Collect fight data
 
 ```sh
 python scraper.py
 ```
 
-The scraper checks up to 300 recent events, skips events already in the database,
-and stops after five consecutive existing events. It pauses between requests.
-An existing event is skipped even if only partially imported, so rerunning is
-not a repair mechanism for incomplete events.
+The scraper checks up to 300 recent events, skips existing events, and pauses
+between requests. It stops after five consecutive events already in the database.
 
-## Train and predict
+### Train and predict
 
-Before training on a different checkout, change the four `joblib.dump()` output
-paths near the bottom of `model.py`: they currently point to
-`/Users/canbo/FightAnalyze/models/`. Ensure the destination directory exists.
+Before your first run, update the four `joblib.dump()` destinations near the end
+of `model.py` to point to the `models/` directory in your checkout. These paths
+are currently specific to the original development machine. Ensure the directory exists.
 
-After collecting enough fights for training and evaluation:
+Once the database contains enough fights to train and evaluate both models:
 
 ```sh
 python model.py
 ```
 
-Each run trains both models, prints evaluation results, and overwrites the four
-saved model/scaler files. It then shows an example matchup and prompts for fighter
-names and a three- or five-round bout. Type `quit` at either fighter-name prompt
-to exit. Fighters must have statistics in the database to be found.
+The script trains both models, prints evaluation results, saves the models and
+scalers, and displays an example matchup. Enter two fighter names and the scheduled
+rounds (3 or 5) to predict another matchup. Type `quit` at either fighter-name prompt
+to exit. Both fighters must have statistics in the database.
 
-The saved `.pkl` files are currently tracked in Git. The script retrains on every
-run rather than loading them automatically.
+Each run retrains the models and overwrites the saved `.pkl` files.
 
-## Explore with SQL
+## Model methodology
 
-Run individual examples from `queries/analysis_queries.sql` in your SQL client.
-These cover fighter averages, head-to-head results, round momentum, and weight-class
-benchmarks. The SQL `v_win_probability` view is a weighted statistical heuristic,
-separate from the trained Python model.
+The winner model uses differences between the two fighters across 23 features.
+Historical performance features are calculated from fights preceding the bout
+being predicted, and age is calculated at the fight date. Missing feature values
+are filled with zero.
 
-## Development and commits
+The finish-method model uses the absolute feature differences plus the scheduled
+number of rounds. Both models use standardized features and logistic regression,
+with a random 80/20 training and test split. The script reports winner accuracy,
+a winner classification report, and finish-method accuracy.
 
-Keep each commit focused on one finished change. Example messages:
+## Limitations
 
-```text
-docs: explain database setup and prediction workflow
-fix: align fresh database schema with scraper requirements
-chore: declare Python dependencies and ignore virtual environments
-```
+- Evaluation uses a random split; chronological validation is needed to better
+  assess predictions on future events.
+- Missing or incomplete scraped statistics can affect predictions. Existing
+  events are skipped, so rerunning the scraper does not repair partially imported events.
+- Database credentials and model output paths currently require manual configuration.
+- Dependencies are unpinned, and there is currently no automated test suite.
 
-There is currently no automated test suite in the repository.
+## License
+
+MIT License. See [LICENSE](https://github.com/canbo206/FightPredictor/blob/main/LICENSE).
