@@ -1,0 +1,27 @@
+{
+  "baseline_revision": "ce9fa12a6c2c0c503a616a5b2618fd4a5aecc55f",
+  "evaluated_on": "2026-09-26",
+  "test_start": "2025-04-26",
+  "test_end": "2026-09-19",
+  "test_fights": 757,
+  "protocol": "All comparisons use the same whole-date train/calibration/test indices. Original estimator uses its original centered scaler and intercept with C=1, fitted on the earlier training window, without random splitting. Feature-only comparison fits both feature sets with the new symmetric training and calibration protocol. No feature or hyperparameter changes were made in response to these test scores.",
+  "original_features_original_estimator": {
+    "accuracy": 0.6050198150594451,
+    "log_loss": 0.6591245830647098,
+    "brier_score": 0.23299097020973625,
+    "ece": 0.04864221165804553
+  },
+  "original_features_new_training": {
+    "accuracy": 0.6023778071334214,
+    "log_loss": 0.6766371870050802,
+    "brier_score": 0.24141786541992108,
+    "ece": 0.0630567945601115
+  },
+  "new_features_new_training": {
+    "accuracy": 0.6063408190224571,
+    "log_loss": 0.67482,
+    "brier_score": 0.23813,
+    "ece": 0.04813
+  },
+  "interpretation": "Small improvement versus old features under matched symmetric training; no established overall superiority. Original estimator had better probability loss/Brier on this period. No bookmaker-odds or profitability benchmark exists. This is a fixed historical comparison, not automatically refreshed on retraining. Exact new-model scores are in evaluation.json for the corresponding run."
+}
