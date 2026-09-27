@@ -34,8 +34,10 @@ function render(result) {
     $(`${corner}-track`).style.width = `${probability}%`;
   }
   $("bout-label").textContent = `${result.rounds}-ROUND BOUT`;
-  $("confidence").textContent = `${result.confidence.score}/10`;
-  $("confidence-label").textContent = result.confidence.label;
+  $("tracked-fights").textContent = `${result.tracked_fights.fighter1} / ${result.tracked_fights.fighter2}`;
+  $("data-note").textContent = `As of ${result.as_of} · Probabilities adjusted on a separate calibration period. No market odds included.`;
+  $("data-warning").textContent = result.warnings.join(" ");
+  $("data-warning").hidden = result.warnings.length === 0;
   const difference = result.probabilities.fighter1 - result.probabilities.fighter2;
   $("favored").textContent = Math.abs(difference) < 0.00001 ? "An even matchup" : `${difference > 0 ? result.fighter1 : result.fighter2} is favored`;
 
@@ -71,15 +73,15 @@ function render(result) {
 
   $("stats").replaceChildren(...result.stats.map((stat) => {
     const row = document.createElement("tr");
-    let edge = stat.edge === "even" ? "Even" : "—";
-    if (stat.edge && stat.edge !== "even") edge = `${result[stat.edge]} +${stat.difference.toFixed(2)}`;
+    let edge = stat.edge === "even" ? "Neutral" : "—";
+    if (stat.edge && stat.edge !== "even") edge = result[stat.edge];
     for (const text of [stat.label, format(stat.fighter1), format(stat.fighter2), edge]) {
       const cell = document.createElement("td");
       cell.textContent = text;
       row.append(cell);
     }
     row.lastChild.className = stat.edge === "fighter1" ? "red-text" : stat.edge === "fighter2" ? "blue-text" : "even";
-    if (stat.lower_is_better) row.firstChild.title = "Lower values are favored by the comparison rule.";
+    row.lastChild.title = `Contribution to fighter 1's log-odds: ${stat.contribution.toFixed(3)}. Positive favors fighter 1; negative favors fighter 2.`;
     return row;
   }));
   $("empty").hidden = true;
@@ -152,6 +154,7 @@ async function loadFighters() {
 form.addEventListener("submit", analyze);
 form.addEventListener("input", () => {
   showError("");
+  $("activity").textContent = "Matchup changed. Analyze again to update the results.";
   if (lastResult) {
     $("results").hidden = true;
     $("empty").hidden = false;

@@ -1,6 +1,7 @@
 """Local web interface for the existing predictor. Run with: python app.py."""
 
 import argparse
+from datetime import date
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -33,22 +34,20 @@ def load_models():
     try:
         artifacts = tuple(joblib.load(model.MODEL_DIR / name) for name in (
             "ufc_model.pkl", "ufc_scaler.pkl", "ufc_method_model.pkl", "ufc_method_scaler.pkl"))
-        expected = (len(model.FEATURES), len(model.FEATURES), len(model.FEATURES) + 1, len(model.FEATURES) + 1)
-        if any(getattr(artifact, "n_features_in_", None) != size for artifact, size in zip(artifacts, expected)):
-            raise ValueError("Saved model feature counts do not match the predictor.")
+        columns = (model.FEATURE_NAMES, model.FEATURE_NAMES,
+                   model.METHOD_FEATURE_NAMES, model.METHOD_FEATURE_NAMES)
+        for artifact, names in zip(artifacts, columns):
+            if (getattr(artifact, "feature_version_", None) != model.FEATURE_VERSION
+                    or list(getattr(artifact, "feature_names_in_", [])) != names):
+                raise ValueError("Saved model feature definitions do not match the predictor.")
         return artifacts
     except Exception as exc:
         raise ModelUnavailable("Saved models are missing or incompatible. Run python model.py to train them, then restart the website.") from exc
 
 
 def list_fighters():
-    conn = model.get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT name FROM v_fighter_metrics ORDER BY name")
-            return [row[0] for row in cur.fetchall()]
-    finally:
-        conn.close()
+    profiles = model.current_profiles(date.today().isoformat())
+    return sorted(profile["name"] for profile in profiles.values())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -72,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
         except psycopg2.OperationalError:
             self.send_json(503, {"error": "Cannot connect to PostgreSQL. Start your database and check the connection settings in model.py, then retry."})
         except psycopg2.ProgrammingError:
-            self.send_json(503, {"error": "The prediction views are unavailable. Complete the database setup in README.md, then retry."})
+            self.send_json(503, {"error": "The fight history could not be read. Check the database setup in README.md, then retry."})
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
         except Exception:

@@ -1,287 +1,126 @@
-import psycopg2
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report
-import joblib
+"""Train and run pre-fight UFC forecasts for the terminal and local website."""
+
+import argparse
+from datetime import date
+from functools import lru_cache
+import json
 from pathlib import Path
+
+import joblib
+import pandas as pd
+import psycopg2
+
+from feature_engine import (
+    BASE_FEATURES, FEATURE_NAMES, FEATURE_VERSION, METHOD_FEATURE_NAMES,
+    build_training_data, matchup_features, method_features, profiles_as_of,
+)
+from training import chronological_split, train_winner, train_method
 
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
+FEATURES = [(key + "_diff", key) for key, _ in BASE_FEATURES]
+BASE_COLS = [key for key, _ in BASE_FEATURES]
 
-
-# Database connection
 
 def get_connection():
     return psycopg2.connect(
-        host="localhost",
-        database="ufc_analytics",
-        user="postgres",
-        password="ufc123",
-        port="5432",
-        connect_timeout=5,
+        host="localhost", database="ufc_analytics", user="postgres",
+        password="ufc123", port="5432", connect_timeout=5,
     )
 
-
-# ── Feature definitions ────────────────────────────────────────────────────
-# Each feature is a differential: Fighter1's value minus Fighter2's value.
-# A positive value means Fighter1 has the edge on that metric.
-# (display_name, base_column_in_views)
-FEATURES = [
-    # Offense
-    ("sig_diff",          "avg_sig_strikes_per_rd"),
-    ("sig_acc_diff",      "sig_strike_accuracy_pct"),
-    ("total_str_diff",    "avg_total_strikes_per_rd"),
-    ("head_diff",         "avg_head_strikes_per_rd"),
-    ("body_diff",         "avg_body_strikes_per_rd"),
-    ("leg_diff",          "avg_leg_strikes_per_rd"),
-    ("td_diff",           "avg_td_per_rd"),
-    ("td_acc_diff",       "td_accuracy_pct"),
-    ("ctrl_diff",         "avg_ctrl_sec_per_rd"),
-    ("sub_diff",          "avg_sub_attempts_per_rd"),
-    ("rev_diff",          "avg_reversals_per_rd"),
-    ("kd_diff",           "avg_knockdowns_per_rd"),
-    # Defense
-    ("sig_absorbed_diff", "avg_sig_absorbed_per_rd"),
-    ("sig_def_diff",      "sig_strike_defense_pct"),
-    ("td_absorbed_diff",  "avg_td_absorbed_per_rd"),
-    ("td_def_diff",       "td_defense_pct"),
-    ("kd_absorbed_diff",  "avg_kd_absorbed_per_rd"),
-    # Record / experience
-    ("winrate_diff",      "win_pct"),
-    ("finishrate_diff",   "finish_rate_pct"),
-    ("experience_diff",   "total_fights"),
-    # Physical
-    ("reach_diff",        "reach_in"),
-    ("height_diff",       "height_in"),
-    ("age_diff",          "age_years"),
-]
-FEATURE_NAMES = [f[0] for f in FEATURES]
-BASE_COLS = [f[1] for f in FEATURES]
-
-
-# ── Load one row per (fight, fighter) with that fight's raw totals ──────────
-# Aggregated to fight level (summed over rounds), plus what the opponent did in
-# the same rounds (for defense) and the result. build_features() then turns this
-# into leak-free "career up to BEFORE this fight" averages.
 
 def load_fight_data():
+    """Read paired round totals, outcomes, exposure time, and fighter metadata.
+
+    Include draws/no-contests in observed statistics even though their outcomes
+    do not become binary training labels. No database changes are made here.
+    """
     query = """
-        SELECT
-            f.fight_id,
-            e.event_date,
-            rs.fighter_id,
-            f.fighter1_id,
-            f.fighter2_id,
+        SELECT f.fight_id, f.event_id, e.event_date, rs.fighter_id,
+            f.fighter1_id, f.fighter2_id, f.winner_id,
             (rs.fighter_id = f.winner_id)::int AS won,
-            f.win_method,
-            f.scheduled_rounds,
-            a.reach_in, a.height_in, a.dob,
-            count(*)                        AS rounds,
-            sum(rs.sig_strikes_landed)      AS sig_l,   sum(rs.sig_strikes_attempted)   AS sig_a,
-            sum(rs.total_strikes_landed)    AS tot_l,
-            sum(rs.head_strikes_landed)     AS head_l,
-            sum(rs.body_strikes_landed)     AS body_l,
-            sum(rs.leg_strikes_landed)      AS leg_l,
-            sum(rs.takedowns_landed)        AS td_l,    sum(rs.takedowns_attempted)     AS td_a,
-            sum(rs.submission_attempts)     AS sub,     sum(rs.reversals)               AS rev,
-            sum(rs.ctrl_time_seconds)       AS ctrl,    sum(rs.knockdowns)              AS kd,
-            sum(opp.sig_strikes_landed)     AS osig_l,  sum(opp.sig_strikes_attempted)  AS osig_a,
-            sum(opp.takedowns_landed)       AS otd_l,   sum(opp.takedowns_attempted)    AS otd_a,
-            sum(opp.knockdowns)             AS okd
+            f.win_method, f.scheduled_rounds, f.win_round, f.win_time,
+            f.weight_class, a.name, a.reach_in, a.height_in, a.dob, a.stance,
+            count(*) AS rounds,
+            sum(rs.sig_strikes_landed) AS sig_l, sum(rs.sig_strikes_attempted) AS sig_a,
+            sum(rs.total_strikes_landed) AS tot_l,
+            sum(rs.head_strikes_landed) AS head_l,
+            sum(rs.body_strikes_landed) AS body_l,
+            sum(rs.leg_strikes_landed) AS leg_l,
+            sum(rs.takedowns_landed) AS td_l, sum(rs.takedowns_attempted) AS td_a,
+            sum(rs.submission_attempts) AS sub, sum(rs.reversals) AS rev,
+            sum(rs.ctrl_time_seconds) AS ctrl, sum(rs.knockdowns) AS kd,
+            sum(opp.sig_strikes_landed) AS osig_l,
+            sum(opp.sig_strikes_attempted) AS osig_a,
+            sum(opp.takedowns_landed) AS otd_l,
+            sum(opp.takedowns_attempted) AS otd_a,
+            sum(opp.knockdowns) AS okd
         FROM fights f
-        JOIN events e       ON e.event_id = f.event_id
+        JOIN events e ON e.event_id = f.event_id
         JOIN round_stats rs ON rs.fight_id = f.fight_id
         JOIN round_stats opp ON opp.fight_id = rs.fight_id
-                            AND opp.round_number = rs.round_number
-                            AND opp.fighter_id <> rs.fighter_id
-        JOIN fighters a     ON a.fighter_id = rs.fighter_id
-        WHERE f.winner_id IS NOT NULL
-        GROUP BY f.fight_id, e.event_date, rs.fighter_id, f.fighter1_id, f.fighter2_id,
-                 f.winner_id, f.win_method, f.scheduled_rounds, a.reach_in, a.height_in, a.dob
+            AND opp.round_number = rs.round_number AND opp.fighter_id <> rs.fighter_id
+        JOIN fighters a ON a.fighter_id = rs.fighter_id
+        GROUP BY f.fight_id, e.event_date, rs.fighter_id,
+            a.name, a.reach_in, a.height_in, a.dob, a.stance
+        ORDER BY e.event_date, f.fight_id, rs.fighter_id
     """
-    from sqlalchemy import create_engine
-    engine = create_engine("postgresql+psycopg2://postgres:ufc123@localhost:5432/ufc_analytics")
-    return pd.read_sql(query, engine)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            return pd.DataFrame(cur.fetchall(), columns=[item[0] for item in cur.description])
+    finally:
+        conn.close()
 
-
-SUM_COLS = ["rounds", "sig_l", "sig_a", "tot_l", "head_l", "body_l", "leg_l",
-            "td_l", "td_a", "sub", "rev", "ctrl", "kd",
-            "osig_l", "osig_a", "otd_l", "otd_a", "okd"]
-
-
-def _prefight_metrics(d):
-    """Given the per-(fight,fighter) rows, add each fighter's career-to-BEFORE
-    -this-fight averages as columns named exactly like BASE_COLS."""
-    d = d.sort_values(["fighter_id", "event_date", "fight_id"]).copy()
-    gb = d.groupby("fighter_id")
-
-    # Cumulative-up-to-but-excluding-this-fight = cumsum minus the current row.
-    for c in SUM_COLS:
-        d[c + "_p"] = gb[c].cumsum() - d[c]
-    d["fights_p"] = gb.cumcount()                      # number of prior fights
-    d["wins_p"] = gb["won"].cumsum() - d["won"]
-    d["finish_win"] = (d["won"].eq(1) & d["win_method"].map(
-        lambda m: method_class(m) in ("KO/TKO", "Submission"))).astype(int)
-    d["finwins_p"] = gb["finish_win"].cumsum() - d["finish_win"]
-
-    r = d["rounds_p"].replace(0, np.nan)               # avoid div-by-zero on debuts
-
-    d["avg_sig_strikes_per_rd"]    = d["sig_l_p"]  / r
-    d["sig_strike_accuracy_pct"]   = d["sig_l_p"]  / d["sig_a_p"].replace(0, np.nan) * 100
-    d["avg_total_strikes_per_rd"]  = d["tot_l_p"]  / r
-    d["avg_head_strikes_per_rd"]   = d["head_l_p"] / r
-    d["avg_body_strikes_per_rd"]   = d["body_l_p"] / r
-    d["avg_leg_strikes_per_rd"]    = d["leg_l_p"]  / r
-    d["avg_td_per_rd"]             = d["td_l_p"]   / r
-    d["td_accuracy_pct"]           = d["td_l_p"]   / d["td_a_p"].replace(0, np.nan) * 100
-    d["avg_ctrl_sec_per_rd"]       = d["ctrl_p"]   / r
-    d["avg_sub_attempts_per_rd"]   = d["sub_p"]    / r
-    d["avg_reversals_per_rd"]      = d["rev_p"]    / r
-    d["avg_knockdowns_per_rd"]     = d["kd_p"]     / r
-    d["avg_sig_absorbed_per_rd"]   = d["osig_l_p"] / r
-    d["sig_strike_defense_pct"]    = (1 - d["osig_l_p"] / d["osig_a_p"].replace(0, np.nan)) * 100
-    d["avg_td_absorbed_per_rd"]    = d["otd_l_p"]  / r
-    d["td_defense_pct"]            = (1 - d["otd_l_p"] / d["otd_a_p"].replace(0, np.nan)) * 100
-    d["avg_kd_absorbed_per_rd"]    = d["okd_p"]    / r
-    d["win_pct"]                   = d["wins_p"]   / d["fights_p"].replace(0, np.nan) * 100
-    d["finish_rate_pct"]           = d["finwins_p"] / d["wins_p"].replace(0, np.nan) * 100
-    d["total_fights"]              = d["fights_p"]
-    d["age_years"] = (pd.to_datetime(d["event_date"]) - pd.to_datetime(d["dob"])).dt.days / 365.25
-    # reach_in / height_in are static and already present
-    return d
-
-
-# Compute leak-free differential features (Fighter1 minus Fighter2)
 
 def build_features(df):
-    d = _prefight_metrics(df)
-
-    f1 = d[d.fighter_id == d.fighter1_id].set_index("fight_id")
-    f2 = d[d.fighter_id == d.fighter2_id].set_index("fight_id")
-    f1, f2 = f1.align(f2, join="inner", axis=0)
-
-    features = pd.DataFrame(index=f1.index)
-    for name, base in FEATURES:
-        features[name] = f1[base] - f2[base]
-    features = features.fillna(0)
-
-    labels = f1["won"].astype(int)                    # did fighter1 win?
-    meta = pd.DataFrame({
-        "win_method": f1["win_method"],
-        "scheduled_rounds": f1["scheduled_rounds"],
-    }, index=f1.index)
-
-    print(f"Feature matrix: {features.shape[0]} fights x {features.shape[1]} features (point-in-time)")
-    print(f"Fighter 1 win rate in dataset: {labels.mean():.1%}")
-    return features, labels, meta
+    return build_training_data(df)
 
 
-def method_class(m):
-    """Map a raw win_method string to one of KO/TKO, Submission, Decision."""
-    if not m:
+def method_class(value):
+    if not isinstance(value, str):
         return None
-    if "Submission" in m:
+    if "Submission" in value:
         return "Submission"
-    if "KO" in m or "TKO" in m:
+    if "KO" in value:
         return "KO/TKO"
-    if "Decision" in m:
+    if "Decision" in value:
         return "Decision"
-    return None  # DQ etc. — excluded
+    return None
 
 
-# ── Train the win/loss model ───────────────────────────────────────────────
-
-def train_model(features, labels):
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, labels, test_size=0.2, random_state=42
-    )
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    model = LogisticRegression(max_iter=2000)
-    model.fit(X_train_scaled, y_train)
-
-    y_pred = model.predict(X_test_scaled)
-    acc = accuracy_score(y_test, y_pred)
-    print(f"\nWinner model accuracy: {acc:.1%}")
-    print("\nClassification report:")
-    print(classification_report(y_test, y_pred, target_names=["Fighter2 wins", "Fighter1 wins"]))
-
-    importance_df = pd.DataFrame({
-        "feature": features.columns.tolist(),
-        "coefficient": model.coef_[0]
-    }).sort_values("coefficient", key=abs, ascending=False)
-    print("\nTop feature importance (|coefficient|, predicting Fighter1 win):")
-    print(importance_df.head(12).to_string(index=False))
-
-    return model, scaler
+def train_model(features, labels, meta):
+    """Train and calibrate on separate past event windows."""
+    return train_winner(features, labels, meta["event_date"])
 
 
-# ── Train the win-method model (KO/TKO vs Submission vs Decision) ───────────
-
-def train_method_model(features, meta):
-    # Method is order-invariant, so use the magnitude of each edge, plus the
-    # bout length (5-round fights go to decision far more often than 3-round).
-    X = features.abs().copy()
-    X["scheduled_rounds"] = meta["scheduled_rounds"].values
-    y = meta["win_method"].map(method_class)
-
-    mask = y.notnull()
-    X, y = X[mask], y[mask]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    model = LogisticRegression(max_iter=2000)  # multinomial by default for multiclass
-    model.fit(X_train_scaled, y_train)
-
-    acc = accuracy_score(y_test, model.predict(X_test_scaled))
-    print(f"\nMethod model accuracy: {acc:.1%}  (baseline = predict most common class)")
-    print(f"Method distribution: {y.value_counts().to_dict()}")
-
-    return model, scaler
+def train_method_model(features, meta, split=None):
+    method_frame = meta[METHOD_FEATURE_NAMES].astype(float)
+    labels = meta["win_method"].map(method_class)
+    return train_method(method_frame, labels, meta["event_date"], split=split)
 
 
-# ── Predict a matchup ──────────────────────────────────────────────────────
-
-STAT_LABELS = [
-    ("Sig Strikes/Rd",   "avg_sig_strikes_per_rd"),
-    ("Strike Acc %",     "sig_strike_accuracy_pct"),
-    ("Total Strikes/Rd", "avg_total_strikes_per_rd"),
-    ("Head/Body/Leg",    None),  # special composite line
-    ("Takedowns/Rd",     "avg_td_per_rd"),
-    ("TD Accuracy %",    "td_accuracy_pct"),
-    ("Ctrl Sec/Rd",      "avg_ctrl_sec_per_rd"),
-    ("Sub Attempts/Rd",  "avg_sub_attempts_per_rd"),
-    ("Knockdowns/Rd",    "avg_knockdowns_per_rd"),
-    ("Sig Absorbed/Rd",  "avg_sig_absorbed_per_rd"),
-    ("Strike Defense %", "sig_strike_defense_pct"),
-    ("TD Defense %",     "td_defense_pct"),
-    ("Win %",            "win_pct"),
-    ("Finish Rate %",    "finish_rate_pct"),
-    ("Reach (in)",       "reach_in"),
-    ("Age",              "age_years"),
-]
-
-# Metrics where a LOWER value is the advantage (so the edge goes to the smaller
-# number): strikes/takedowns/knockdowns absorbed, and age.
-LOWER_IS_BETTER = {
-    "avg_sig_absorbed_per_rd", "avg_td_absorbed_per_rd",
-    "avg_kd_absorbed_per_rd", "age_years",
-}
+@lru_cache(maxsize=1)
+def current_profiles(as_of):
+    """Cache histories for this date; restart the server after updating the DB."""
+    return profiles_as_of(load_fight_data(), as_of)
 
 
-def get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
-    """Return the same prediction data for the terminal and the local website."""
+def resolve_fighter(profiles, name):
+    candidates = [profile for profile in profiles.values()
+                  if name.casefold() in profile["name"].casefold()]
+    exact = [profile for profile in candidates if name.casefold() == profile["name"].casefold()]
+    if exact:
+        return exact[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError(f"Fighter not found: {name}")
+    raise ValueError(f"'{name}' matches several fighters. Enter a full name from the list.")
+
+
+def validate_matchup(fighter1, fighter2, rounds):
     if not isinstance(fighter1, str) or not isinstance(fighter2, str):
         raise ValueError("Enter two fighter names.")
     fighter1, fighter2 = fighter1.strip(), fighter2.strip()
@@ -293,172 +132,134 @@ def get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1,
         raise ValueError("Scheduled rounds must be 3 or 5.")
     if fighter1.casefold() == fighter2.casefold():
         raise ValueError("Choose two different fighters.")
+    return fighter1, fighter2
 
-    conn = get_connection()
-    cur = conn.cursor()
 
-    def get_stats(name):
-        cur.execute("""
-            SELECT
-                m.avg_sig_strikes_per_rd, m.sig_strike_accuracy_pct, m.avg_total_strikes_per_rd,
-                m.avg_head_strikes_per_rd, m.avg_body_strikes_per_rd, m.avg_leg_strikes_per_rd,
-                m.avg_td_per_rd, m.td_accuracy_pct, m.avg_ctrl_sec_per_rd,
-                m.avg_sub_attempts_per_rd, m.avg_reversals_per_rd, m.avg_knockdowns_per_rd,
-                m.avg_sig_absorbed_per_rd, m.sig_strike_defense_pct, m.avg_td_absorbed_per_rd,
-                m.td_defense_pct, m.avg_kd_absorbed_per_rd,
-                COALESCE(r.win_pct, 0), COALESCE(r.finish_rate_pct, 0), m.total_fights,
-                m.reach_in, m.height_in,
-                CASE WHEN m.dob IS NOT NULL THEN date_part('year', age(m.dob)) END,
-                m.name
-            FROM v_fighter_metrics m
-            LEFT JOIN v_fighter_record r ON r.fighter_id = m.fighter_id
-            WHERE m.name ILIKE %s
-            ORDER BY (lower(m.name) = lower(%s)) DESC, m.total_fights DESC, m.name
-            LIMIT 1
-        """, ("%" + name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", name))
-        return cur.fetchone()
-
-    try:
-        s1 = get_stats(fighter1)
-        s2 = get_stats(fighter2)
-    finally:
-        cur.close()
-        conn.close()
-
-    if not s1:
-        raise ValueError(f"Fighter not found: {fighter1}")
-    if not s2:
-        raise ValueError(f"Fighter not found: {fighter2}")
-
-    # Resolved display names (in case ILIKE matched a fuller name)
-    name1, name2 = s1[-1], s2[-1]
-    if name1 == name2:
+def get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
+    """Use the exact same history/feature code used for backtesting."""
+    fighter1, fighter2 = validate_matchup(fighter1, fighter2, rounds)
+    as_of = date.today().isoformat()
+    profiles = current_profiles(as_of)
+    first = resolve_fighter(profiles, fighter1)
+    second = resolve_fighter(profiles, fighter2)
+    if first["fighter_id"] == second["fighter_id"]:
         raise ValueError("Both names matched the same fighter. Choose two different fighters.")
 
-    # Build the differential feature vector (first len(FEATURES) columns).
-    def num(v):
-        return float(v) if v is not None else 0.0
-
-    diffs = [num(s1[i]) - num(s2[i]) for i in range(len(FEATURES))]
-
-    # Winner model (directional features)
-    feature_row = pd.DataFrame([diffs], columns=FEATURE_NAMES)
+    feature_row = pd.DataFrame([matchup_features(first, second)], columns=FEATURE_NAMES)
     prob = dict(zip(model.classes_, model.predict_proba(scaler.transform(feature_row))[0]))
-    prob_a = float(prob[1])
-    prob_b = float(prob[0])
+    prob_a, prob_b = float(prob[1]), float(prob[0])
+    method_frame = pd.DataFrame([method_features(first, second, rounds)], columns=METHOD_FEATURE_NAMES)
+    method_probs = dict(zip(
+        map(str, method_model.classes_),
+        map(float, method_model.predict_proba(method_scaler.transform(method_frame))[0]),
+    ))
 
-    # Method model (order-invariant edges + bout length)
-    method_row = [abs(d) for d in diffs] + [rounds]
-    method_frame = pd.DataFrame([method_row], columns=FEATURE_NAMES + ["scheduled_rounds"])
-    m_prob = method_model.predict_proba(method_scaler.transform(method_frame))[0]
-    method_probs = {str(label): float(value) for label, value in zip(method_model.classes_, m_prob)}
-    pred_method = max(method_probs, key=method_probs.get)
-
-    # Confidence score out of 10 (distance of the win prob from a coin flip)
-    conf_score = min(10, round(abs(prob_a - 0.5) * 20))
-    if conf_score < 5:
-        conf_label = "LOW"
-    elif conf_score <= 8:
-        conf_label = "MEDIUM"
-    else:
-        conf_label = "HIGH"
-
+    # A learned coefficient determines direction, not a blanket rule such as
+    # "younger is always better." This is a contribution, NOT a betting edge.
+    contributions = scaler.transform(feature_row)[0] * model.coef_[0]
     stats = []
-    for label, base in STAT_LABELS:
-        if base is None:
-            zones = [BASE_COLS.index(f"avg_{zone}_strikes_per_rd") for zone in ("head", "body", "leg")]
-            stats.append({"label": label, "fighter1": "/".join(f"{num(s1[i]):.0f}" for i in zones),
-                          "fighter2": "/".join(f"{num(s2[i]):.0f}" for i in zones),
-                          "edge": None, "difference": None, "lower_is_better": False})
-            continue
-        i = BASE_COLS.index(base)
-        v1 = None if s1[i] is None else float(s1[i])
-        v2 = None if s2[i] is None else float(s2[i])
-        edge, difference = None, None
-        if v1 is not None and v2 is not None:
-            difference = abs(v1 - v2)
-            edge = "even" if v1 == v2 else (
-                "fighter1" if (v1 > v2) ^ (base in LOWER_IS_BETTER) else "fighter2")
-        stats.append({"label": label, "fighter1": v1, "fighter2": v2,
-                      "edge": edge, "difference": difference, "lower_is_better": base in LOWER_IS_BETTER})
+    missing_flags = {"age_years": "age_missing", "reach_in": "reach_missing",
+                     "height_in": "height_missing", "layoff_days": "layoff_missing"}
+    for i, (key, label) in enumerate(BASE_FEATURES):
+        values = [None if missing_flags.get(key) and p[missing_flags[key]]
+                  else float(p[key]) for p in (first, second)]
+        contribution = float(contributions[i])
+        direction = "even" if abs(contribution) < 1e-10 else (
+            "fighter1" if contribution > 0 else "fighter2")
+        stats.append({"label": label, "fighter1": values[0], "fighter2": values[1],
+                      "edge": direction, "contribution": contribution,
+                      "difference": None if None in values else abs(values[0] - values[1])})
 
-    return {"fighter1": name1, "fighter2": name2, "rounds": rounds,
-            "probabilities": {"fighter1": prob_a, "fighter2": prob_b},
-            "method_probabilities": method_probs, "predicted_method": pred_method,
-            "confidence": {"score": conf_score, "label": conf_label}, "stats": stats}
+    tracked = {"fighter1": int(first["total_fights"]), "fighter2": int(second["total_fights"])}
+    warnings = []
+    if min(tracked.values()) < 3:
+        warnings.append("Limited tracked fight history: estimates rely more heavily on baseline assumptions.")
+    if min(first["rate_coverage_pct"], second["rate_coverage_pct"]) < 100:
+        warnings.append("Some statistics are incomplete; rates exclude observations where the required totals or duration are unavailable.")
+    return {
+        "fighter1": first["name"], "fighter2": second["name"], "rounds": rounds,
+        "probabilities": {"fighter1": prob_a, "fighter2": prob_b},
+        "method_probabilities": method_probs,
+        "predicted_method": max(method_probs, key=method_probs.get),
+        "stats": stats, "tracked_fights": tracked, "as_of": as_of,
+        "feature_version": FEATURE_VERSION, "warnings": warnings,
+    }
 
 
 def predict_matchup(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds=3):
-    """Print a shared prediction in the original terminal format."""
     try:
-        result = get_matchup_prediction(model, scaler, method_model, method_scaler, fighter1, fighter2, rounds)
+        result = get_matchup_prediction(
+            model, scaler, method_model, method_scaler, fighter1, fighter2, rounds)
     except ValueError as exc:
         print(f"  {exc}")
         return
-    name1, name2 = result["fighter1"], result["fighter2"]
-    prob_a, prob_b = result["probabilities"]["fighter1"], result["probabilities"]["fighter2"]
-    method_probs, pred_method = result["method_probabilities"], result["predicted_method"]
-    conf_score, conf_label = result["confidence"]["score"], result["confidence"]["label"]
-
-    print(f"\n{'='*54}")
-    print(f"  {name1} vs {name2}  ({rounds}-round bout)")
-    print(f"{'='*54}")
-    print(f"  {name1:<30} {prob_a*100:5.1f}%")
-    print(f"  {name2:<30} {prob_b*100:5.1f}%")
-    print(f"{'='*54}")
-    print(f"  Confidence: {conf_score}/10 ({conf_label})")
-    print(f"  Predicted method: {pred_method}")
-    print(f"    KO/TKO {method_probs.get('KO/TKO',0)*100:4.0f}%   "
-          f"Submission {method_probs.get('Submission',0)*100:4.0f}%   "
-          f"Decision {method_probs.get('Decision',0)*100:4.0f}%")
-
-    # Stat breakdown
-    print(f"\n  Stat breakdown ({name1} vs {name2}):")
-    print(f"  {'Metric':<18} {'F1':>10} {'F2':>10} {'Edge':>14}")
-    print(f"  {'-'*54}")
+    print(f"\n{result['fighter1']} vs {result['fighter2']} ({rounds} rounds)")
+    for key in ("fighter1", "fighter2"):
+        print(f"  {result[key]:<30} {result['probabilities'][key]:.1%}")
+    print(f"  Predicted method: {result['predicted_method']}")
+    print("  " + " | ".join(f"{key}: {value:.1%}" for key, value in result["method_probabilities"].items()))
+    print(f"  Tracked fights: {result['tracked_fights']['fighter1']} / {result['tracked_fights']['fighter2']}")
+    print(f"\n  {'Feature':<28} {'F1':>9} {'F2':>9}  Model lean")
     for stat in result["stats"]:
-        def display(value):
-            return "N/A" if value is None else value if isinstance(value, str) else f"{value:.2f}"
-        edge = "N/A"
-        if stat["edge"] == "even":
-            edge = "Even"
-        elif stat["edge"]:
-            winner = result[stat["edge"]]
-            edge = f"{winner.split()[0]} +{stat['difference']:.2f}"
-        elif isinstance(stat["fighter1"], str):
-            edge = ""
-        print(f"  {stat['label']:<18} {display(stat['fighter1']):>10} {display(stat['fighter2']):>10} {edge:>14}")
+        v1 = "N/A" if stat["fighter1"] is None else f"{stat['fighter1']:.2f}"
+        v2 = "N/A" if stat["fighter2"] is None else f"{stat['fighter2']:.2f}"
+        lean = "Neutral" if stat["edge"] == "even" else result[stat["edge"]]
+        print(f"  {stat['label']:<28} {v1:>9} {v2:>9}  {lean}")
+    for warning in result["warnings"]:
+        print(f"  {warning}")
+    print("  Model lean is not betting value; no bookmaker prices are included.")
 
 
+def train_and_save():
+    raw = load_fight_data()
+    if raw.empty:
+        raise ValueError("No fight data found. Run the scraper before training.")
+    raw = raw[pd.to_datetime(raw["event_date"]) < pd.Timestamp(date.today())]
+    features, labels, meta = build_features(raw)
+    split = chronological_split(meta["event_date"])
+    winner, scaler, winner_report = train_winner(features, labels, meta["event_date"], split=split)
+    method, method_scaler, method_report = train_method_model(features, meta, split=split)
+    artifacts = (winner, scaler, method, method_scaler)
+    for artifact in artifacts:
+        artifact.feature_version_ = FEATURE_VERSION
+    MODEL_DIR.mkdir(exist_ok=True)
+    for artifact, name in zip(artifacts, (
+        "ufc_model.pkl", "ufc_scaler.pkl", "ufc_method_model.pkl", "ufc_method_scaler.pkl",
+    )):
+        temporary = MODEL_DIR / (name + ".tmp")
+        joblib.dump(artifact, temporary)
+        temporary.replace(MODEL_DIR / name)
+    report = {
+        "feature_version": FEATURE_VERSION, "winner_features": FEATURE_NAMES,
+        "method_features": METHOD_FEATURE_NAMES, "generated_on": date.today().isoformat(),
+        "history_start": str(raw["event_date"].min()), "history_end": str(raw["event_date"].max()),
+        "winner": winner_report, "method": method_report,
+        "market_benchmark": "Not available: no historical bookmaker odds are stored.",
+        "deployment": "Uses the evaluated training-window models and later calibration window; test outcomes were not used to fit parameters.",
+    }
+    (MODEL_DIR / "evaluation.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    print(json.dumps(report, indent=2, allow_nan=False))
+    current_profiles.cache_clear()
+    return artifacts
 
-# Main
 
 if __name__ == "__main__":
-    df = load_fight_data()
-    features, labels, meta = build_features(df)
-    model, scaler = train_model(features, labels)
-    method_model, method_scaler = train_method_model(features, meta)
-
-    MODEL_DIR.mkdir(exist_ok=True)
-    joblib.dump(model,         MODEL_DIR / "ufc_model.pkl")
-    joblib.dump(scaler,        MODEL_DIR / "ufc_scaler.pkl")
-    joblib.dump(method_model,  MODEL_DIR / "ufc_method_model.pkl")
-    joblib.dump(method_scaler, MODEL_DIR / "ufc_method_scaler.pkl")
-    print("\nModels saved.")
-
-    predict_matchup(model, scaler, method_model, method_scaler,
-                    "Islam Makhachev", "Dustin Poirier", rounds=5)
-
-    # Interactive predictor
-    print("\n--- Interactive Fight Predictor ---")
-    print("Type 'quit' to exit\n")
-    while True:
-        f1 = input("Enter Fighter 1 name: ").strip()
-        if f1.lower() == "quit":
-            break
-        f2 = input("Enter Fighter 2 name: ").strip()
-        if f2.lower() == "quit":
-            break
-        r = input("Scheduled rounds (3 or 5) [3]: ").strip()
-        rounds = 5 if r == "5" else 3
-        predict_matchup(model, scaler, method_model, method_scaler, f1, f2, rounds=rounds)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--train-only", action="store_true", help="Train, evaluate, save, and exit.")
+    args = parser.parse_args()
+    models = train_and_save()
+    if not args.train_only:
+        predict_matchup(*models, "Islam Makhachev", "Dustin Poirier", rounds=5)
+        print("\n--- Interactive Fight Predictor ---\nType 'quit' to exit\n")
+        while True:
+            try:
+                f1 = input("Enter Fighter 1 name: ").strip()
+                if f1.lower() == "quit":
+                    break
+                f2 = input("Enter Fighter 2 name: ").strip()
+                if f2.lower() == "quit":
+                    break
+                rounds = 5 if input("Scheduled rounds (3 or 5) [3]: ").strip() == "5" else 3
+                predict_matchup(*models, f1, f2, rounds)
+            except (EOFError, KeyboardInterrupt):
+                break

@@ -17,7 +17,7 @@
     </header>
 
     <main>
-      <div class="heading"><div><p class="eyebrow">THE NUMBERS BEFORE THE BELL</p><h1>Build your matchup.</h1></div><p class="heading-note">Two fighters. Twenty-three features.<br>One closer look at the fight.</p></div>
+      <div class="heading"><div><p class="eyebrow">THE NUMBERS BEFORE THE BELL</p><h1>Build your matchup.</h1></div><p class="heading-note">Opponent strength. Recent form.<br>A closer look at the fight.</p></div>
 
       <section class="matchup-panel" aria-labelledby="matchup-title">
         <h2 id="matchup-title" class="sr-only">Choose your fighters</h2>
@@ -50,13 +50,14 @@
             <div class="fighter-result blue"><p class="eyebrow">BLUE CORNER</p><h3 id="blue-name"></h3><p class="big-probability" id="blue-probability"></p><span class="probability-label">WIN PROBABILITY</span></div>
           </div>
           <div class="probability-track" aria-hidden="true"><span id="red-track"></span><span id="blue-track"></span></div>
-          <div class="prediction-footer"><span id="favored"></span><span class="confidence">Confidence <strong id="confidence"></strong><span id="confidence-label" class="confidence-pill"></span></span></div>
-          <p class="confidence-note">Confidence reflects distance from a 50/50 prediction; it is not measured model accuracy.</p>
+          <div class="prediction-footer"><span id="favored"></span><span class="confidence">Tracked fights <strong id="tracked-fights"></strong></span></div>
+          <p class="confidence-note" id="data-note"></p>
+          <p class="confidence-note" id="data-warning" hidden></p>
         </section>
 
         <section class="method-section" aria-labelledby="method-title"><div class="section-heading"><h2 id="method-title">How it could end</h2><span class="subtle">Finish-method probabilities</span></div><div id="methods" class="method-grid"></div></section>
 
-        <section class="stats-section" aria-labelledby="stats-title"><div class="section-heading"><h2 id="stats-title">Tale of the tape</h2><span class="subtle">Career stats · per round where indicated</span></div><div class="table-wrap"><table><caption class="sr-only">Fighter statistics and statistical edge</caption><thead><tr><th scope="col">METRIC</th><th scope="col" id="red-column" class="red-text"></th><th scope="col" id="blue-column" class="blue-text"></th><th scope="col">STAT EDGE</th></tr></thead><tbody id="stats"></tbody></table></div><p class="table-note">A statistical edge highlights the model’s comparison rule, not a guaranteed advantage. Missing data is shown as N/A.</p></section>
+        <section class="stats-section" aria-labelledby="stats-title"><div class="section-heading"><h2 id="stats-title">Inside the matchup</h2><span class="subtle">Prior fight history · time-adjusted rates</span></div><div class="table-wrap"><table><caption class="sr-only">Pre-fight features and their learned model direction</caption><thead><tr><th scope="col">FEATURE</th><th scope="col" id="red-column" class="red-text"></th><th scope="col" id="blue-column" class="blue-text"></th><th scope="col">MODEL LEAN</th></tr></thead><tbody id="stats"></tbody></table></div><p class="table-note">Model lean shows how each feature contributes to this prediction using its learned coefficient. Rates are smoothed for limited samples; records cover tracked fights only. N/A marks unavailable measurements. This is not a betting edge: bookmaker prices are not included.</p></section>
       </div>
     </main>
     <footer><span>FIGHTPREDICTOR <span class="footer-divider">/</span> Built from the fight data.</span><span>Experimental predictions. Every fight is different.</span></footer>
