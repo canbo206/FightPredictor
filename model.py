@@ -22,11 +22,7 @@ FEATURES = [(key + "_diff", key) for key, _ in BASE_FEATURES]
 BASE_COLS = [key for key, _ in BASE_FEATURES]
 
 
-def get_connection():
-    return psycopg2.connect(
-        host="localhost", database="ufc_analytics", user="postgres",
-        password="ufc123", port="5432", connect_timeout=5,
-    )
+from database import get_connection
 
 
 def load_fight_data():

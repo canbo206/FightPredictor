@@ -4,6 +4,9 @@ numpy
 pandas
 psycopg2-binary
 requests
-scikit-learn
+# Match the version used to serialize the checked-in model artifacts.
+scikit-learn==1.8.0
 scipy
 SQLAlchemy
+fastapi>=0.115,<1
+uvicorn>=0.30,<1

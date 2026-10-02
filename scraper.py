@@ -66,14 +66,7 @@ def fetch(url, tries=3):
 # Database connection
 
 
-def get_connection():
-    return psycopg2.connect(
-        host="localhost",
-        database="ufc_analytics",
-        user="postgres",
-        password="ufc123",
-        port="5432"
-    )
+from database import get_connection
 
 # Quick test to make sure we can connect
 if __name__ == "__main__":
