@@ -14,3 +14,8 @@ backup_*.sql
 backfill.py
 queries/cleanup_and_constraints.sql
 queries/add_metric_columns.sql
+
+# Local configuration
+.env
+.env.*
+!.env.example

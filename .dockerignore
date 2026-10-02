@@ -1,0 +1,11 @@
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env*
+!.env.example
+backup_*.sql
+tests
+docs
