@@ -62,9 +62,10 @@ Run the remaining commands from the repository root with the virtual environment
 
 ## Database setup
 
-The scripts currently connect to `ufc_analytics` on `localhost:5432` with user
-`postgres` and password `ufc123`. To use your own credentials, update
-`get_connection()` in `scraper.py` and `model.py`.
+The default connection is `localhost:5432`, database `ufc_analytics`, user
+`postgres`, and password `ufc123`. Override it with `DATABASE_URL` or the standard
+`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` environment variables.
+`database.py` shares these settings across the scraper and model.
 
 Create and initialize a fresh database:
 
@@ -173,17 +174,18 @@ for assumptions, source links, results, and limitations, and
   better on some probability metrics in the recorded comparison.
 - Missing or incomplete scraped statistics can affect predictions. Existing
   events are skipped, so rerunning the scraper does not repair partially imported events.
-- Database credentials currently require manual configuration.
+- Database credentials can be configured with environment variables.
 - Historical height/reach/DOB snapshots, injuries, camp changes, short-notice
   bookings, and weigh-in information are not available. Static physicals are
   assumed known; missing measurements use defaults plus indicator features.
 - Calibration is evaluated, not guaranteed. One held-out period is not proof of
   stable performance; repeatedly tuning against it would invalidate that claim.
-- Dependencies are unpinned.
+- `scikit-learn` is pinned to 1.8.0 to match the saved model artifacts; upgrade it together with retraining.
 
 ## Tests
 
 ```sh
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
@@ -194,3 +196,80 @@ output, and API errors without requiring a running PostgreSQL database.
 ## License
 
 MIT License. See [LICENSE](https://github.com/canbo206/FightPredictor/blob/main/LICENSE).
+
+## API, containers, and automation
+
+The original `python app.py` command still works. A new **FastAPI** adapter serves
+that same website and prediction engine, with validated requests and generated
+OpenAPI documentation at `/docs`:
+
+```bash
+bash scripts/dev.sh setup
+bash scripts/dev.sh test
+bash scripts/dev.sh serve
+# In a second terminal:
+bash scripts/dev.sh health
+```
+
+Windows / PowerShell equivalent:
+
+```powershell
+./scripts/dev.ps1 -Action setup
+./scripts/dev.ps1 -Action test
+./scripts/dev.ps1 -Action serve -Port 8000
+# In a second terminal:
+./scripts/dev.ps1 -Action health -Port 8000
+```
+
+The scripts create a virtual environment, install dependencies, run tests, start
+the API, and check its health endpoint. Bash uses `PORT=8001` to change the port;
+PowerShell uses `-Port 8001`. `PROJECT_PYTHON` can point at an existing Python
+interpreter. `/health` checks the web process only; predictions also need the
+PostgreSQL data and compatible trained models. No request retrains the model.
+
+Small skills statement: **Wrote Bash and PowerShell scripts to automate project
+setup, tests, local startup, and HTTP health checks.** Run both before describing
+this as hands-on cross-platform experience.
+
+### Docker Compose (local development)
+
+`Dockerfile` packages the FastAPI server; `compose.yaml` defines it and PostgreSQL
+with a persistent database volume. Both published ports bind to your computer.
+The API container runs as a non-root user and mounts saved models read-only.
+
+1. Install Docker with Compose. Copy `.env.example` to `.env` and choose a local
+   database password. Do not commit `.env`.
+2. Run `docker compose config --quiet`, then `docker compose up --build -d`.
+3. Open `http://127.0.0.1:8000/docs`. The database on port **5433** starts empty,
+   separate from your original PostgreSQL database on port 5432. The schema is
+   initialized only on first volume creation; existing data is not imported.
+4. To populate the new database, install the Python dependencies locally and run
+   the existing scraper and trainer against it. In Bash:
+
+   ```bash
+   export PGHOST=127.0.0.1 PGPORT=5433 PGDATABASE=ufc_analytics PGUSER=postgres
+   read -r -s -p 'Compose database password: ' PGPASSWORD; echo
+   export PGPASSWORD
+   .venv/bin/python scraper.py
+   .venv/bin/python model.py --train-only
+   docker compose restart api
+   ```
+
+   In PowerShell, set the same variables using `$env:PGHOST = "127.0.0.1"`,
+   `$env:PGPORT = "5433"`, etc., then use `.venv/Scripts/python.exe`.
+   An already-set `DATABASE_URL` takes precedence over PG variables: unset it
+   before using this PG-based example. Scraping accesses UFCStats and training
+   replaces saved artifacts, so neither is part of setup, tests, or CI.
+5. `docker compose down` stops services and preserves the database volume.
+   Avoid `down -v` unless you intend to delete that volume.
+
+The **YAML** workflow `.github/workflows/checks.yml` is configured to test the
+Bash scripts on Linux, PowerShell scripts on Windows, and the image on Linux when
+pushed to GitHub. It runs tests and container liveness, not scraping, retraining,
+or deployment. Cloud hosting is not configured.
+
+Learn: [FastAPI](https://fastapi.tiangolo.com/tutorial/),
+[Docker Compose](https://docs.docker.com/compose/gettingstarted/),
+[GitHub Actions](https://docs.github.com/en/actions/get-started/quickstart),
+[Bash](https://www.gnu.org/s/bash/manual/html_node/Shell-Scripts.html),
+[PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/learn/ps101/00-introduction).
